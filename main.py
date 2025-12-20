@@ -77,8 +77,8 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(
     lifespan=lifespan,
     title="Aces Backend API",
-    # redoc_url=None,
-    # swagger_ui_oauth2_redirect_url=None,
+    redoc_url=None,
+    swagger_ui_oauth2_redirect_url=None,
 )
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore
