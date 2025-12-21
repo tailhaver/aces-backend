@@ -1,5 +1,5 @@
 """Devlogs API module"""
 
-from .main import router
+from .main import router, DevlogsResponse, DevlogResponse
 
-__all__ = ["router"]
+__all__ = ["router", "DevlogsResponse", "DevlogResponse"]

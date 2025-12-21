@@ -19,6 +19,7 @@ from api.v1.auth import require_auth  # type: ignore
 from db import get_db  # , engine
 from lib.hackatime import get_projects
 from lib.ratelimiting import limiter
+from devlogs import DevlogsResponse, DevlogResponse
 from models.main import User, UserProject
 
 CDN_HOST = "hc-cdn.hel1.your-objectstorage.com"
@@ -106,6 +107,36 @@ def validate_repo(repo: HttpUrl | None):
             status_code=400, detail="Repo url host exceeds the length limit"
         )
     return True
+
+@router.get("/{project_id}/devlogs")
+@require_auth
+async def return_devlogs_for_project(
+    request: Request,
+    project_id: int,
+    session: AsyncSession = Depends(get_db)
+) -> DevlogsResponse: 
+    """Return devlogs using only a project ID"""
+
+    user_email = request.state.user["sub"]
+
+    project_raw = await session.execute(
+        sqlalchemy.select(UserProject).where(
+            UserProject.id == project_id,
+            UserProject.user_email == user_email,
+        )
+    )
+
+    project = project_raw.scalar_one_or_none()
+
+    if project is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Project does not exist"
+        )
+
+    return DevlogsResponse(
+        devlogs=[DevlogResponse.model_validate(d) for d in project.devlogs]
+    )
 
 
 # @protect
