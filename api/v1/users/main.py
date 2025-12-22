@@ -5,18 +5,19 @@
 # import asyncpg
 # import orjson
 from datetime import datetime, timedelta, timezone
-from logging import error
+from logging import error, warning
 from typing import Optional
 
 import dotenv
 import httpx
+import json
 import os
 import sqlalchemy
+import traceback
 import validators
 import redis.asyncio as redis
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, Request
 from fastapi.exceptions import HTTPException
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -308,39 +309,68 @@ async def retry_hackatime_link(
         ) from e
 
 
-@router.get("/check_idv_verification")
-@limiter.limit("2/minute")  # type: ignore
-@require_auth
 async def check_idv_verification(
-    request: Request,
-    response: Response,
-    session: AsyncSession = Depends(get_db),
-) -> JSONResponse:
-    user_email = request.state.user["sub"]
+    user: User,
+) -> dict[str, str | bool]:
+    """Checks whether a user is IDV eligible based on the email stored in their user info
 
-    user_raw = await session.execute(
-        sqlalchemy.select(User).where(User.email == user_email)
-    )
+    Args:
+        user (User)
 
-    user = user_raw.scalar_one_or_none()
-
-    if user is None:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    redis_response: str = await r.get(f"{user.id}-idv-status")
+    Returns:
+        dict[str, str | bool]: Keys:
+            success (bool): Whether we were successfully able to query IDV
+            result (str, optional): Raw response from IDV, if success
+            error (str, optional): Raw error from IDV, if not success
+            message (str, optional): Raw error message from IDV, if not success
+    """
+    redis_response: bytes | None = await r.get(f"{user.id}-idv-status")
     if redis_response is not None:
-        return JSONResponse(content={"result": redis_response.decode("utf-8")})
+        return {"success": True, "result": redis_response.decode("utf-8")}
 
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(
-            f"https://auth.hackclub.com/api/external/check?email={user.email}"
-        )
-        data = resp.json()
-        if not resp.is_success:
-            response.status_code = resp.status_code
-        else:
-            await r.setex(f"{user.id}-idv-status", 900, data.get("result"))
-        return data
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"https://auth.hackclub.com/api/external/check",
+                params={"email": user.email},
+                timeout=10,
+            )
+            data: dict[str, str] = response.json()
+            match response.status_code:
+                case 200:
+                    pass
+                case 404:
+                    warning(
+                        f"HCA returned a 404 when looking up the status for {user.email}"
+                    )
+                    return {"success": False, **data}
+                case 422:
+                    warning(
+                        f"HCA returned a 422 (invalid params) when looking up the status for {user.email}"
+                    )
+                    return {"success": False, **data}
+                case _:
+                    error(
+                        f"Received unexpected status code when checking auth status! Got: {response.status_code}"
+                    )
+                    return {"success": False, **data}
+            if data.get("result") is None:
+                warning(
+                    f"Uncaught error from HCA, key result is empty! Raw HCA response: {data}"
+                )
+                return {"success": False, **data}
+            await r.setex(f"{user.id}-idv-status", 900, data["result"])
+            return {"success": True, "result": data["result"]}
+    except httpx.TimeoutException:
+        error(f"Timeout while querying Hack Club Auth endpoint")
+        traceback.print_exc()
+    except json.JSONDecodeError:
+        error(f"Error decoding JSON from Hack Club Auth API call!")
+        traceback.print_exc()
+    except Exception:
+        error(f"Other exception caught when querying Hack Club Auth endpoint!")
+        traceback.print_exc()
+    return {"success": False}
 
 
 # disabled for 30 days, no login -> delete

@@ -14,5 +14,4 @@ __all__ = [
     "is_pending_deletion",
     "router",
     "update_user",
-    "check_idv_verification",
 ]
