@@ -7,6 +7,7 @@
 import json
 import os
 import traceback
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from logging import error, warning
@@ -30,12 +31,19 @@ from lib.ratelimiting import limiter
 from lib.responses import SimpleResponse
 from models.main import User
 
-router = APIRouter()
-
 dotenv.load_dotenv()
 
-HOST = "redis" if os.getenv("USING_DOCKER") == "true" else "localhost"
-r = redis.Redis(password=os.getenv("REDIS_PASSWORD", ""), host=HOST)
+
+@asynccontextmanager
+async def lifespan(app: Any):
+    global r
+    HOST = "redis" if os.getenv("USING_DOCKER") == "true" else "localhost"
+    r = redis.Redis(password=os.getenv("REDIS_PASSWORD", ""), host=HOST)
+    yield
+    await r.close()
+
+
+router = APIRouter(lifespan=lifespan)
 
 
 class IDVStatusResponse(Enum):
@@ -364,7 +372,7 @@ async def check_idv_verification(
     redis_response: str | bytes | None = await r.get(f"{user.id}-idv-status")
     if redis_response is not None:
         if isinstance(redis_response, bytes):
-            redis_response = redis_response.decode('utf-8')
+            redis_response = redis_response.decode("utf-8")
         return IDVStatus(redis_response)
 
     try:
@@ -374,19 +382,19 @@ async def check_idv_verification(
                 params={"email": user.email},
                 timeout=10,
             )
-            data: dict[str, str] = response.json()
             match response.status_code:
                 case 200:
                     pass
                 case 404:
                     warning(
-                        f"HCA returned a 404 when looking up the status for {user.email}"
+                        "HCA returned a 404 when looking up the status for "
+                        f"user ID #{user.id}"
                     )
                     return IDVStatus.ERROR
                 case 422:
                     warning(
-                        "HCA returned a 422 (invalid params) when looking up the"
-                        f"status for {user.email}"
+                        "HCA returned a 422 (invalid params) when looking up the "
+                        f"status for user ID #{user.id}"
                     )
                     return IDVStatus.ERROR
                 case _:
@@ -395,6 +403,7 @@ async def check_idv_verification(
                         f"status! Got: {response.status_code}"
                     )
                     return IDVStatus.ERROR
+            data: dict[str, str] = response.json()
             if data.get("result") is None:
                 warning(
                     f"Uncaught error from HCA, key result is empty! Raw HCA response: {data}"
@@ -405,13 +414,13 @@ async def check_idv_verification(
             return idv_status
     except httpx.TimeoutException:
         error("Timeout while querying Hack Club Auth endpoint")
-        traceback.print_exc()
+        error(traceback.format_exc())
     except json.JSONDecodeError:
         error("Error decoding JSON from Hack Club Auth API call!")
-        traceback.print_exc()
+        error(traceback.format_exc())
     except Exception:  # type: ignore # pylint: disable=broad-exception-caught
         error("Other exception caught when querying Hack Club Auth endpoint!")
-        traceback.print_exc()
+        error(traceback.format_exc())
     return IDVStatus.ERROR
 
 
