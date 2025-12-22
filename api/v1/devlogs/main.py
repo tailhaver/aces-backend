@@ -296,7 +296,7 @@ async def review_devlog(
         return ReviewResponse(
             success=True, message="Devlog review processed successfully"
         )
-    except HTTPException: # pass through HTTPExceptions
+    except HTTPException:  # pass through HTTPExceptions
         raise
     except Exception as e:
         error("Error committing review decision:", exc_info=e)
