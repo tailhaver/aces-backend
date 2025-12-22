@@ -9,8 +9,7 @@ from typing import List, Optional
 
 import sqlalchemy
 import validators
-from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -116,7 +115,7 @@ async def update_project(
     project_request: UpdateProjectRequest,
     project_id: int,
     session: AsyncSession = Depends(get_db),
-):
+) -> ProjectResponse:
     """Update project details"""
 
     user_email = request.state.user["sub"]
@@ -171,14 +170,17 @@ async def update_project(
         return ProjectResponse.from_model(project)
     except Exception:  # type: ignore # pylint: disable=broad-exception-caught
         await session.rollback()
-        return Response(status_code=500)
+        raise HTTPException(status_code=500, detail="Error updating project")
 
 
 @router.get("/")
+@limiter.limit("20/minute")  # type: ignore
 @require_auth
 async def return_projects_for_user(
-    request: Request, session: AsyncSession = Depends(get_db)
-):
+    request: Request,
+    response: Response,
+    session: AsyncSession = Depends(get_db),
+) -> List[ProjectResponse]:
     """Return all projects for the authenticated user"""
     user_email = request.state.user["sub"]
     user_raw = await session.execute(
@@ -198,7 +200,7 @@ async def return_projects_for_user(
 @require_auth
 async def return_project_by_id(
     request: Request, project_id: int, session: AsyncSession = Depends(get_db)
-):
+) -> ProjectResponse:
     """Return a project by ID for a given user"""
     user_email = request.state.user["sub"]
 
@@ -220,10 +222,11 @@ async def return_project_by_id(
 @require_auth
 async def link_hackatime_project(
     request: Request,
+    response: Response,
     project_id: int,
     hackatime_project: HackatimeProject,
     session: AsyncSession = Depends(get_db),
-):
+) -> ProjectResponse:
     """Link a Hackatime project to a user project"""
     user_email = request.state.user["sub"]
 
@@ -309,10 +312,11 @@ async def link_hackatime_project(
 @require_auth
 async def unlink_hackatime_project(
     request: Request,
+    response: Response,
     project_id: int,
     hackatime_project: HackatimeProject,
     session: AsyncSession = Depends(get_db),
-):
+) -> ProjectResponse:
     """Unlink a Hackatime project from a user project"""
     user_email = request.state.user["sub"]
 
@@ -373,12 +377,14 @@ async def unlink_hackatime_project(
 
 
 @router.post("/")
+@limiter.limit("20/minute")  # type: ignore
 @require_auth
 async def create_project(
     request: Request,
+    response: Response,
     project_create_request: CreateProjectRequest,
     session: AsyncSession = Depends(get_db),
-):
+) -> ProjectResponse:
     """Create a new project for the authenticated user"""
     user_email = request.state.user["sub"]
     user_raw = await session.execute(
@@ -451,9 +457,10 @@ async def create_project(
 @require_auth
 async def ship_project(
     request: Request,
+    response: Response,
     project_id: int,
     session: AsyncSession = Depends(get_db),
-):
+) -> ProjectResponse:
     """Mark a project as shipped"""
     user_email = request.state.user["sub"]
 
