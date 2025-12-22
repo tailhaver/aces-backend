@@ -358,10 +358,10 @@ async def retry_hackatime_link(
         ) from e
 
 
-async def check_idv_verification(
+async def check_idv_status(
     user: User,
 ) -> IDVStatus:
-    """Checks whether a user is IDV eligible based on the email stored in their user info
+    """Gets the IDV status for a user based on the email stored in their user info
 
     Args:
         user (User)
