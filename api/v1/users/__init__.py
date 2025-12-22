@@ -5,6 +5,7 @@ from .main import (
     is_pending_deletion,
     router,
     update_user,
+    check_idv_verification,
 )
 
 __all__ = [
@@ -13,4 +14,5 @@ __all__ = [
     "is_pending_deletion",
     "router",
     "update_user",
+    "check_idv_verification",
 ]

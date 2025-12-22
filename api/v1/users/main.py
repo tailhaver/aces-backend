@@ -8,10 +8,15 @@ from datetime import datetime, timedelta, timezone
 from logging import error
 from typing import Optional
 
+import dotenv
+import httpx
+import os
 import sqlalchemy
 import validators
-from fastapi import APIRouter, Depends, Request
+import redis.asyncio as redis
+from fastapi import APIRouter, Depends, Request, Response
 from fastapi.exceptions import HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -24,6 +29,11 @@ from lib.responses import SimpleResponse
 from models.main import User
 
 router = APIRouter()
+
+dotenv.load_dotenv()
+
+HOST = "redis" if os.getenv("USING_DOCKER") == "true" else "localhost"
+r = redis.Redis(password=os.getenv("REDIS_PASSWORD", ""), host=HOST)
 
 
 class UserResponse(BaseModel):
@@ -296,6 +306,41 @@ async def retry_hackatime_link(
         raise HTTPException(
             status_code=500, detail="Error linking Hackatime account"
         ) from e
+
+
+@router.get("/check_idv_verification")
+@limiter.limit("32/hour")  # type: ignore
+@require_auth
+async def check_idv_verification(
+    request: Request,
+    response: Response,
+    session: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    user_email = request.state.user["sub"]
+
+    user_raw = await session.execute(
+        sqlalchemy.select(User).where(User.email == user_email)
+    )
+
+    user = user_raw.scalar_one_or_none()
+
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    redis_response: str = await r.get(f"{user.id}-idv-status")
+    if redis_response is not None:
+        return JSONResponse(content={"result": redis_response.decode("utf-8")})
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"https://auth.hackclub.com/api/external/check?email={user.email}"
+        )
+        data = resp.json()
+        if not resp.is_success:
+            response.status_code = resp.status_code
+        else:
+            await r.setex(f"{user.id}-idv-status", 900, data.get("result"))
+        return data
 
 
 # disabled for 30 days, no login -> delete
