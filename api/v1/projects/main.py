@@ -16,8 +16,8 @@ from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from api.v1.auth import require_auth  # type: ignore
-from api.v1.auth.main import Permission, permission_dependency
+from api.v1.auth import require_auth, Permission, permission_dependency
+from api.v1.devlogs import DevlogResponse, DevlogsResponse
 from db import get_db  # , engine
 from lib.hackatime import get_projects
 from lib.ratelimiting import limiter
@@ -108,6 +108,37 @@ def validate_repo(repo: HttpUrl | None):
             status_code=400, detail="Repo url host exceeds the length limit"
         )
     return True
+
+
+@router.get("/{project_id}/devlogs")
+@require_auth
+async def return_devlogs_for_project(
+    request: Request, project_id: int, session: AsyncSession = Depends(get_db)
+) -> DevlogsResponse:
+    """Return devlogs for a project owned by the authenticated user"""
+
+    user_email = request.state.user["sub"]
+
+    project_raw = await session.execute(
+        sqlalchemy.select(UserProject)
+        .options(selectinload(UserProject.devlogs))
+        .where(
+            UserProject.id == project_id,
+            UserProject.user_email == user_email,
+        )
+    )
+
+    project = project_raw.scalar_one_or_none()
+
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # sort devlogs by newest first
+    sorted_devlogs = sorted(project.devlogs, key=lambda d: d.created_at, reverse=True)
+
+    return DevlogsResponse(
+        devlogs=[DevlogResponse.model_validate(d) for d in sorted_devlogs]
+    )
 
 
 # @protect

@@ -380,8 +380,10 @@ async def validate_otp(
                     status_code=409,
                     detail="User integrity error",
                 ) from e
-            except Exception:  # type: ignore # pylint: disable=broad-exception-caught
-                raise HTTPException(status_code=500, detail="Error creating user")
+            except Exception as e:  # type: ignore # pylint: disable=broad-exception-caught
+                raise HTTPException(
+                    status_code=500, detail="Error creating user"
+                ) from e
 
     response.set_cookie(
         key="sessionId", value=ret_jwt, httponly=True, secure=True, max_age=604800

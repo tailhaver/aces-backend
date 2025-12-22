@@ -11,6 +11,7 @@ from .main import (
     send_otp,
     validate_otp,
     permission_dependency,
+    Permission,
 )
 
 __all__ = [
@@ -25,4 +26,5 @@ __all__ = [
     "send_otp",
     "validate_otp",
     "permission_dependency",
+    "Permission",
 ]
