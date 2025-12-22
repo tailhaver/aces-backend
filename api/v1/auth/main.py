@@ -31,7 +31,7 @@ from lib.ratelimiting import limiter
 from lib.responses import SimpleResponse
 from models.main import User
 
-TOKEN_EXPIRY_SECONDS = 86400  # 24 hours
+TOKEN_EXPIRY_SECONDS = 604800  # 7 days
 
 HOST = "redis" if os.getenv("USING_DOCKER") == "true" else "localhost"
 r = redis.Redis(password=os.getenv("REDIS_PASSWORD", ""), host=HOST)
@@ -221,7 +221,6 @@ async def is_user_authenticated(request: Request) -> AuthJwt:
                 "verify_exp": True,
                 "verify_signature": True,
             },
-            verify=True,
         )
 
         return decoded_jwt

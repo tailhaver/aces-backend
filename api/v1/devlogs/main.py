@@ -283,11 +283,7 @@ async def review_devlog(
                                 detail="User associated with devlog not found",
                             )
 
-                        await session.execute(
-                            sqlalchemy.update(User)
-                            .where(User.id == user.id)
-                            .values(cards_balance=user.cards_balance + cards)
-                        )
+                        user.cards_balance += cards
 
                 elif review.status == DevlogState.REJECTED:
                     devlog.state = status_value
