@@ -118,6 +118,9 @@ app.add_middleware(
         "accept-language",
         "content-language",
         "x-airtable-secret",
+        "origin",
+        "user-agent",
+        "cache-control",
     ],
     max_age=3600,
 )

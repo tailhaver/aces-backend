@@ -253,22 +253,23 @@ async def review_devlog(
             if review.status == DevlogState.ACCEPTED:
                 devlog.state = status_value
 
-                # calc the cards to award based on hours difference from last snapshot
-                prev_result = await session.execute(
-                    sqlalchemy.select(Devlog.hours_snapshot)
-                    .where(
-                        Devlog.project_id == devlog.project_id,
-                        Devlog.id < devlog.id,
-                    )
-                    .order_by(Devlog.id.desc())
-                    .limit(1)
-                )
-                prev_hours = prev_result.scalar() or 0
-                cards = round((devlog.hours_snapshot - prev_hours) * CARDS_PER_HOUR)
-                devlog.cards_awarded = cards
-
                 # only award cards if transitioning TO accepted (prevent double-awarding)
                 if old_state != DevlogState.ACCEPTED.value:
+                    # calc the cards to award based on hours difference from last snapshot
+                    prev_result = await session.execute(
+                        sqlalchemy.select(Devlog.hours_snapshot)
+                        .where(
+                            Devlog.project_id == devlog.project_id,
+                            Devlog.id < devlog.id,
+                        )
+                        .order_by(Devlog.id.desc())
+                        .limit(1)
+                    )
+                    prev_hours = prev_result.scalar() or 0
+                    cards = round(
+                        (devlog.hours_snapshot - prev_hours) * CARDS_PER_HOUR
+                    )
+                    devlog.cards_awarded = cards
                     # add the awarded cards to the user's balance
                     user_result = await session.execute(
                         sqlalchemy.select(User)
