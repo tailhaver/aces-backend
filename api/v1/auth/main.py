@@ -214,13 +214,14 @@ async def is_user_authenticated(request: Request) -> AuthJwt:
         decoded_jwt = jwt.decode(
             session_id,
             secret,
-            ["HS256"],
+            algorithms=["HS256"],
             options={
                 "require_sub": True,
                 "require_iat": True,
                 "verify_exp": True,
                 "verify_signature": True,
             },
+            verify=True,
         )
 
         return decoded_jwt
