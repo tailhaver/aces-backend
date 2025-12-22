@@ -24,7 +24,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from api.v1.auth.main import require_auth, send_otp_code  # type: ignore
+from api.v1.auth import require_auth, send_otp_code
 from db import get_db
 from lib.hackatime import get_account, get_projects
 from lib.ratelimiting import limiter
@@ -116,6 +116,7 @@ class DeleteUserResponse(BaseModel):
 # there'll be a second endpoint for admins to update
 # @protect
 @router.patch("/me")
+@limiter.limit("10/hour")  # type: ignore
 @require_auth
 async def update_user(
     request: Request,
@@ -191,6 +192,7 @@ async def get_user(
 
 # @protect
 @router.delete("/me")
+@limiter.limit("10/hour")  # type: ignore
 @require_auth
 async def delete_user(
     request: Request,

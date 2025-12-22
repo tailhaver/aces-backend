@@ -5,17 +5,19 @@
 # import orjson
 from datetime import datetime
 from logging import error
-from typing import List, Optional
+from typing import Any, List, Optional
 
 import sqlalchemy
 import validators
-from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi_pagination import Page, Params
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
+from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from api.v1.auth import require_auth  # type: ignore
+from api.v1.auth import Permission, permission_dependency, require_auth
+from api.v1.devlogs import DevlogResponse, DevlogsResponse
 from db import get_db  # , engine
 from lib.hackatime import get_projects
 from lib.ratelimiting import limiter
@@ -108,6 +110,37 @@ def validate_repo(repo: HttpUrl | None):
     return True
 
 
+@router.get("/{project_id}/devlogs")
+@require_auth
+async def return_devlogs_for_project(
+    request: Request, project_id: int, session: AsyncSession = Depends(get_db)
+) -> DevlogsResponse:
+    """Return devlogs for a project owned by the authenticated user"""
+
+    user_email = request.state.user["sub"]
+
+    project_raw = await session.execute(
+        sqlalchemy.select(UserProject)
+        .options(selectinload(UserProject.devlogs))
+        .where(
+            UserProject.id == project_id,
+            UserProject.user_email == user_email,
+        )
+    )
+
+    project = project_raw.scalar_one_or_none()
+
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # sort devlogs by newest first
+    sorted_devlogs = sorted(project.devlogs, key=lambda d: d.created_at, reverse=True)
+
+    return DevlogsResponse(
+        devlogs=[DevlogResponse.model_validate(d) for d in sorted_devlogs]
+    )
+
+
 # @protect
 @router.patch("/{project_id}")
 @require_auth
@@ -116,7 +149,7 @@ async def update_project(
     project_request: UpdateProjectRequest,
     project_id: int,
     session: AsyncSession = Depends(get_db),
-):
+) -> ProjectResponse:
     """Update project details"""
 
     user_email = request.state.user["sub"]
@@ -169,16 +202,19 @@ async def update_project(
         await session.commit()
         await session.refresh(project)
         return ProjectResponse.from_model(project)
-    except Exception:  # type: ignore # pylint: disable=broad-exception-caught
+    except Exception as e:  # type: ignore # pylint: disable=broad-exception-caught
         await session.rollback()
-        return Response(status_code=500)
+        raise HTTPException(status_code=500, detail="Error updating project") from e
 
 
 @router.get("/")
+@limiter.limit("20/minute")  # type: ignore
 @require_auth
 async def return_projects_for_user(
-    request: Request, session: AsyncSession = Depends(get_db)
-):
+    request: Request,
+    response: Response,  # pylint: disable=unused-argument
+    session: AsyncSession = Depends(get_db),
+) -> List[ProjectResponse]:
     """Return all projects for the authenticated user"""
     user_email = request.state.user["sub"]
     user_raw = await session.execute(
@@ -194,11 +230,45 @@ async def return_projects_for_user(
     return projects_ret
 
 
+@router.get("/all")
+@limiter.limit("10/minute")  # type: ignore
+@require_auth
+async def get_all_projects(
+    request: Request,  # pylint: disable=unused-argument
+    response: Response,  # pylint: disable=unused-argument
+    session: AsyncSession = Depends(get_db),
+    params: Params = Depends(),
+    _permission: Any = Depends(permission_dependency(Permission.ADMIN)),
+) -> Page[ProjectResponse]:
+    """Let admins get all projects"""
+    # Get total count
+    total_result = await session.execute(
+        sqlalchemy.select(func.count()).select_from(UserProject)  # pylint: disable=E1102
+    )
+    total = total_result.scalar() or 0
+
+    # Get paginated items
+    offset = (params.page - 1) * params.size
+    items_result = await session.execute(
+        sqlalchemy.select(UserProject)
+        .order_by(UserProject.last_updated.desc())
+        .limit(params.size)
+        .offset(offset)
+    )
+    projects = items_result.scalars().all()
+
+    # Transform to ProjectResponse
+    items = [ProjectResponse.from_model(project) for project in projects]
+
+    # Create and return Page
+    return Page.create(items=items, total=total, params=params)
+
+
 @router.get("/{project_id}")
 @require_auth
 async def return_project_by_id(
     request: Request, project_id: int, session: AsyncSession = Depends(get_db)
-):
+) -> ProjectResponse:
     """Return a project by ID for a given user"""
     user_email = request.state.user["sub"]
 
@@ -220,10 +290,11 @@ async def return_project_by_id(
 @require_auth
 async def link_hackatime_project(
     request: Request,
+    response: Response,  # pylint: disable=unused-argument
     project_id: int,
     hackatime_project: HackatimeProject,
     session: AsyncSession = Depends(get_db),
-):
+) -> ProjectResponse:
     """Link a Hackatime project to a user project"""
     user_email = request.state.user["sub"]
 
@@ -309,10 +380,11 @@ async def link_hackatime_project(
 @require_auth
 async def unlink_hackatime_project(
     request: Request,
+    response: Response,  # pylint: disable=unused-argument
     project_id: int,
     hackatime_project: HackatimeProject,
     session: AsyncSession = Depends(get_db),
-):
+) -> ProjectResponse:
     """Unlink a Hackatime project from a user project"""
     user_email = request.state.user["sub"]
 
@@ -373,12 +445,14 @@ async def unlink_hackatime_project(
 
 
 @router.post("/")
+@limiter.limit("20/minute")  # type: ignore
 @require_auth
 async def create_project(
     request: Request,
+    response: Response,  # pylint: disable=unused-argument
     project_create_request: CreateProjectRequest,
     session: AsyncSession = Depends(get_db),
-):
+) -> ProjectResponse:
     """Create a new project for the authenticated user"""
     user_email = request.state.user["sub"]
     user_raw = await session.execute(
@@ -451,9 +525,10 @@ async def create_project(
 @require_auth
 async def ship_project(
     request: Request,
+    response: Response,  # pylint: disable=unused-argument
     project_id: int,
     session: AsyncSession = Depends(get_db),
-):
+) -> ProjectResponse:
     """Mark a project as shipped"""
     user_email = request.state.user["sub"]
 
