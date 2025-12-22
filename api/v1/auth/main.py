@@ -31,7 +31,7 @@ from lib.ratelimiting import limiter
 from lib.responses import SimpleResponse
 from models.main import User
 
-TOKEN_EXPIRY_SECONDS = 86400  # 24 hour
+TOKEN_EXPIRY_SECONDS = 86400  # 24 hours
 
 HOST = "redis" if os.getenv("USING_DOCKER") == "true" else "localhost"
 r = redis.Redis(password=os.getenv("REDIS_PASSWORD", ""), host=HOST)
@@ -213,7 +213,7 @@ async def is_user_authenticated(request: Request) -> AuthJwt:
 
         decoded_jwt = jwt.decode(
             session_id,
-            os.getenv("JWT_SECRET", ""),
+            secret,
             ["HS256"],
             options={
                 "require_sub": True,
@@ -222,19 +222,6 @@ async def is_user_authenticated(request: Request) -> AuthJwt:
                 "verify_signature": True,
             },
         )
-
-        if "sub" not in decoded_jwt:
-            raise HTTPException(
-                status_code=401, detail="Invalid token: missing sub claim"
-            )
-        if "iat" not in decoded_jwt:
-            raise HTTPException(
-                status_code=401, detail="Invalid token: missing iat claim"
-            )
-        if "exp" not in decoded_jwt:
-            raise HTTPException(
-                status_code=401, detail="Invalid token: missing exp claim"
-            )
 
         return decoded_jwt
 
@@ -247,7 +234,7 @@ async def is_user_authenticated(request: Request) -> AuthJwt:
 
 
 @router.post("/refresh_session")
-@limiter.limit("10 per hour")  # type: ignore
+@limiter.limit("10/hour")  # type: ignore
 async def refresh_token(request: Request, response: Response) -> SimpleResponse:
     """Refresh JWT session token"""
     curr_session_id = request.cookies.get("sessionId")

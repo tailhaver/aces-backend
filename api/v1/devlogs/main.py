@@ -222,7 +222,11 @@ async def review_devlog(
     if not airtable_secret:
         raise HTTPException(status_code=500, detail="Server misconfiguration")
 
-    if not hmac.compare_digest(x_airtable_secret, airtable_secret):
+    # Normalize both secrets to bytes before constant-time comparison
+    provided_secret = x_airtable_secret.encode("utf-8")
+    expected_secret = airtable_secret.encode("utf-8")
+
+    if not hmac.compare_digest(provided_secret, expected_secret):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     try:
