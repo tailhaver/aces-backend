@@ -31,8 +31,7 @@ from slowapi.middleware import SlowAPIMiddleware
 # from sqlalchemy.ext.asyncio import AsyncSession
 # from sqlalchemy.ext.asyncio import async_sessionmaker
 from api.v1.auth import require_auth  # , is_user_authenticated
-from api.v1.auth import router as auth_router
-from api.v1.auth.main import Permission, permission_dependency
+from api.v1.auth import router as auth_router, Permission, permission_dependency
 from api.v1.devlogs import router as devlogs_router
 from api.v1.projects import router as projects_router
 from api.v1.users import router as users_router

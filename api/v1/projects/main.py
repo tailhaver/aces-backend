@@ -16,8 +16,7 @@ from sqlalchemy import func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from api.v1.auth import require_auth  # type: ignore
-from api.v1.auth.main import Permission, permission_dependency
+from api.v1.auth import require_auth, Permission, permission_dependency
 from api.v1.devlogs import DevlogResponse, DevlogsResponse
 from db import get_db  # , engine
 from lib.hackatime import get_projects

@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from api.v1.auth.main import require_auth, send_otp_code  # type: ignore
+from api.v1.auth import require_auth, send_otp_code
 from db import get_db
 from lib.hackatime import get_account, get_projects
 from lib.ratelimiting import limiter
