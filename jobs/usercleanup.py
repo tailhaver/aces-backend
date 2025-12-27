@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import select, delete
+from sqlalchemy import select
 from db.main import get_session
 from models.main import User
 
@@ -10,7 +10,7 @@ async def cleanup_deleted_users() -> int:
         now = datetime.now(timezone.utc)
 
         query = select(User).where(
-            User.marked_for_deletion == True, User.date_for_deletion <= now
+            User.marked_for_deletion.is_(True), User.date_for_deletion <= now
         )
 
         result = await session.execute(query)
