@@ -153,7 +153,11 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Any):
         start_time = time.perf_counter()
 
-        response = await call_next(request)
+        try:
+            response = await call_next(request)
+        except Exception:
+            logging.getLogger("aces.access").exception("Unhandled exception in request %s %s", request.method, request.url.path)
+            raise
 
         duration_ms = (time.perf_counter() - start_time) * 1000
         client_ip = request.client.host if request.client else "unknown"
