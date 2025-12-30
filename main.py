@@ -13,6 +13,8 @@ from typing import Any
 # import orjson
 # import os
 import dotenv
+import sentry_sdk
+from sentry_sdk.integrations.logging import LoggingIntegration
 from fastapi import Depends, FastAPI, HTTPException, Request  # , Form
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -47,6 +49,21 @@ import asyncio
 # from api.users import foo
 
 dotenv.load_dotenv()
+
+sentry_dsn = os.getenv("SENTRY_DSN")
+if sentry_dsn:
+    sentry_sdk.init(
+        dsn=sentry_dsn,
+        enable_logs=True,
+        integrations=[
+            LoggingIntegration(
+                sentry_logs_level=logging.INFO,
+                level=logging.INFO,
+                event_level=logging.ERROR,
+            ),
+        ],
+        environment=os.getenv("ENVIRONMENT", "development"),
+    )
 
 log_level = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
