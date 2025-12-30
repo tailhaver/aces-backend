@@ -55,6 +55,19 @@ logging.basicConfig(
     datefmt="%Y-%m-%dT%H:%M:%S%z",
 )
 
+# Configure aces loggers explicitly (uvicorn can override basicConfig)
+_log_formatter = logging.Formatter(
+    "%(asctime)s %(levelname)s %(name)s %(message)s",
+    datefmt="%Y-%m-%dT%H:%M:%S%z",
+)
+_log_handler = logging.StreamHandler()
+_log_handler.setFormatter(_log_formatter)
+for _logger_name in ("aces.access", "aces.security"):
+    _logger = logging.getLogger(_logger_name)
+    _logger.setLevel(log_level)
+    _logger.addHandler(_log_handler)
+    _logger.propagate = False
+
 # engine = create_async_engine(
 #     url=os.getenv("SQL_CONNECTION_STR", ""),
 #     echo=True,
