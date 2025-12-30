@@ -14,7 +14,7 @@ from typing import Any
 # import os
 import dotenv
 import sentry_sdk
-from sentry_sdk.integrations.logging import LoggingIntegration
+from sentry_sdk.integrations.logging import EventHandler, LoggingIntegration
 from fastapi import Depends, FastAPI, HTTPException, Request  # , Form
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -79,10 +79,13 @@ _log_formatter = logging.Formatter(
 )
 _log_handler = logging.StreamHandler()
 _log_handler.setFormatter(_log_formatter)
+_sentry_handler = EventHandler(level=logging.ERROR) if sentry_dsn else None
 for _logger_name in ("aces.access", "aces.security"):
     _logger = logging.getLogger(_logger_name)
     _logger.setLevel(log_level)
     _logger.addHandler(_log_handler)
+    if _sentry_handler:
+        _logger.addHandler(_sentry_handler)
     _logger.propagate = False
 
 # engine = create_async_engine(
