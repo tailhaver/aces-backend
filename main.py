@@ -3,9 +3,11 @@
 # from fastapi import FastAPI
 # from typing import Annotated
 # import asyncpg
+import hashlib
+import logging
 import os
+import time
 from contextlib import asynccontextmanager
-from logging import basicConfig
 from typing import Any
 
 # import orjson
@@ -47,7 +49,11 @@ import asyncio
 dotenv.load_dotenv()
 
 log_level = os.getenv("LOG_LEVEL", "INFO").upper()
-basicConfig(level=log_level)
+logging.basicConfig(
+    level=log_level,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    datefmt="%Y-%m-%dT%H:%M:%S%z",
+)
 
 # engine = create_async_engine(
 #     url=os.getenv("SQL_CONNECTION_STR", ""),
@@ -108,6 +114,53 @@ class CloudflareRealIPMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    """Middleware to log HTTP requests for observability and security monitoring"""
+
+    async def dispatch(self, request: Request, call_next: Any):
+        start_time = time.perf_counter()
+
+        response = await call_next(request)
+
+        duration_ms = (time.perf_counter() - start_time) * 1000
+        client_ip = request.client.host if request.client else "unknown"
+        user_id = self._get_user_identifier(request)
+
+        method = request.method
+        path = request.url.path
+        status_code = response.status_code
+
+        if status_code >= 500:
+            log_level = logging.ERROR
+        elif status_code >= 400:
+            log_level = logging.WARNING
+        else:
+            log_level = logging.INFO
+
+        logger = logging.getLogger("aces.access")
+        logger.log(
+            log_level,
+            "%s %s %d %.0fms ip=%s user=%s",
+            method,
+            path,
+            status_code,
+            duration_ms,
+            client_ip,
+            user_id,
+        )
+
+        return response
+
+    def _get_user_identifier(self, request: Request) -> str:
+        """Get user identifier from authenticated request state"""
+        user = getattr(request.state, "user", None)
+        if user and isinstance(user, dict):
+            user_id = user.get("id")
+            if user_id is not None:
+                return str(user_id)
+        return "anon"
+
+
 app = FastAPI(
     lifespan=lifespan,
     title="Aces Backend API",
@@ -115,10 +168,26 @@ app = FastAPI(
     swagger_ui_oauth2_redirect_url=None,
 )
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore
+
+
+def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    """Custom rate limit handler with logging"""
+    rate_logger = logging.getLogger("aces.security")
+    client_ip = request.client.host if request.client else "unknown"
+    rate_logger.warning(
+        "RATE_LIMIT_EXCEEDED ip=%s path=%s method=%s",
+        client_ip,
+        request.url.path,
+        request.method,
+    )
+    return _rate_limit_exceeded_handler(request, exc)
+
+
+app.add_exception_handler(RateLimitExceeded, rate_limit_handler)  # type: ignore
 if os.getenv("CLOUDFLARE_IP", "false").lower() == "true":
     app.add_middleware(CloudflareRealIPMiddleware)
 app.add_middleware(SlowAPIMiddleware)
+app.add_middleware(RequestLoggingMiddleware)
 
 ALLOWED_ORIGINS = [o for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o]
 app.add_middleware(
