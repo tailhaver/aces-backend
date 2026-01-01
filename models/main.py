@@ -94,6 +94,9 @@ class UserProject(Base):
     devlogs: Mapped[list["Devlog"]] = relationship(
         "Devlog", back_populates="project", cascade="all, delete-orphan"
     )
+    referral_code_used: Mapped[Optional[str]] = MappedColumn(
+        String(64), nullable=True, default=None
+    )
 
     # Relationship back to user
     user: Mapped["User"] = relationship("User", back_populates="projects")
