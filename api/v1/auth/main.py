@@ -406,15 +406,6 @@ async def validate_otp(
                 raise HTTPException(
                     status_code=500, detail="Error creating user"
                 ) from e
-    else:
-        # existing user login, save referral code if not already set (immutable once set)
-        if (
-            otp_client_response.referral_code
-            and existing_user.referral_code_used is None
-        ):
-            existing_user.referral_code_used = otp_client_response.referral_code
-            await session.commit()
-
     response.set_cookie(
         key="sessionId", value=ret_jwt, httponly=True, secure=True, max_age=604800
     )
