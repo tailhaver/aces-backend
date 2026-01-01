@@ -342,8 +342,9 @@ async def validate_otp(
     result = await session.execute(
         sqlalchemy.select(User).where(User.email == otp_client_response.email)
     )
+    existing_user = result.scalar_one_or_none()
 
-    if result.scalar_one_or_none() is None:
+    if existing_user is None:
         if old_email is not None:
             # updating email flow
             user_raw = await session.execute(
@@ -377,7 +378,7 @@ async def validate_otp(
             user = User(
                 email=otp_client_response.email,
                 hackatime_id=hackatime_data.id if hackatime_data else None,
-                username=hackatime_data.username if hackatime_data else None,\
+                username=hackatime_data.username if hackatime_data else None,
                 referral_code_used=otp_client_response.referral_code,
             )
             try:
@@ -406,15 +407,10 @@ async def validate_otp(
                     status_code=500, detail="Error creating user"
                 ) from e
     else:
-        # existing user login, save referral code if not already set
-        if otp_client_response.referral_code:
-            user_raw = await session.execute(
-                sqlalchemy.select(User).where(User.email == otp_client_response.email)
-            )
-            user = user_raw.scalar_one_or_none()
-            if user and user.referral_code_used is None:
-                user.referral_code_used = otp_client_response.referral_code
-                await session.commit()
+        # existing user login, save referral code if not already set (immutable once set)
+        if otp_client_response.referral_code and existing_user.referral_code_used is None:
+            existing_user.referral_code_used = otp_client_response.referral_code
+            await session.commit()
 
     response.set_cookie(
         key="sessionId", value=ret_jwt, httponly=True, secure=True, max_age=604800

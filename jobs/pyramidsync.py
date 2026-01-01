@@ -4,6 +4,7 @@ import os
 
 import httpx
 from pyairtable import Api
+from pyairtable.formulas import match
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
@@ -30,37 +31,34 @@ async def sync_users_to_airtable():
             select(User).options(selectinload(User.projects))
         )).scalars().all()
 
-        for user in users:
-            idv = "error"
-            try:
-                async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=10) as client:
+            for user in users:
+                idv = "error"
+                try:
                     resp = await client.get(
                         "https://auth.hackclub.com/api/external/check",
                         params={"email": user.email},
-                        timeout=10,
                     )
                     if resp.status_code == 200:
                         idv = resp.json().get("result", "error")
-            except Exception:
-                pass
+                except Exception:
+                    pass
 
-            record = {
-                "Email": user.email,
-                "Hours": round(sum(p.hackatime_total_hours for p in user.projects), 2),
-                "Projects Shipped": sum(1 for p in user.projects if p.shipped),
-                "IDV Status": idv,
-            }
+                record = {
+                    "Email": user.email,
+                    "Hours": round(sum(p.hackatime_total_hours for p in user.projects), 2),
+                    "Projects Shipped": sum(1 for p in user.projects if p.shipped),
+                    "IDV Status": idv,
+                }
 
+                try:
+                    def upsert_record(r):
+                        existing = table.first(formula=match({"Email": r["Email"]}))
+                        if existing:
+                            table.update(existing["id"], r)
+                        else:
+                            table.create(r)
 
-            try:
-                # Check if record exists, update or create accordingly
-                def upsert_record(r):
-                    existing = table.first(formula=f"{{Email}}='{r['Email']}'")
-                    if existing:
-                        table.update(existing["id"], r)
-                    else:
-                        table.create(r)
-
-                await asyncio.to_thread(lambda r=record: upsert_record(r))
-            except Exception:
-                logger.exception("Airtable sync failed for %s", user.email)
+                    await asyncio.to_thread(lambda r=record: upsert_record(r))
+                except Exception:
+                    logger.exception("Airtable sync failed for %s", user.email)
