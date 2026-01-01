@@ -42,7 +42,7 @@ async def sync_users_to_airtable():
                     if resp.status_code == 200:
                         idv = resp.json().get("result", "error")
                 except Exception:
-                    pass
+                    logger.warning("IDV check failed for %s", user.email, exc_info=True)
 
                 record = {
                     "Email": user.email,
