@@ -16,11 +16,13 @@ logger = logging.getLogger(__name__)
 async def sync_users_to_airtable():
     """Push user data to Pyramid Scheme Airtable table"""
     table_id = os.getenv("AIRTABLE_PYRAMID_TABLE_ID")
-    if not table_id:
+    api_key = os.getenv("AIRTABLE_API_KEY")
+    base_id = os.getenv("AIRTABLE_BASE_ID")
+    if not all([table_id, api_key, base_id]):
         return
 
-    api = Api(os.environ["AIRTABLE_API_KEY"])
-    table = api.table(os.environ["AIRTABLE_BASE_ID"], table_id)
+    api = Api(api_key)
+    table = api.table(base_id, table_id)
 
     # Fetch all users with their projects
     async with get_session() as session:
@@ -42,17 +44,23 @@ async def sync_users_to_airtable():
             except Exception:
                 pass
 
-            # Build the record for Airtable
             record = {
                 "Email": user.email,
-                "Username": user.username or "",
                 "Hours": round(sum(p.hackatime_total_hours for p in user.projects), 2),
                 "Projects Shipped": sum(1 for p in user.projects if p.shipped),
                 "IDV Status": idv,
-                "Referral Code": user.referral_code_used or "",
             }
 
+
             try:
-                await asyncio.to_thread(lambda r=record: table.create(r))
+                # Check if record exists, update or create accordingly
+                def upsert_record(r):
+                    existing = table.first(formula=f"{{Email}}='{r['Email']}'")
+                    if existing:
+                        table.update(existing["id"], r)
+                    else:
+                        table.create(r)
+
+                await asyncio.to_thread(lambda r=record: upsert_record(r))
             except Exception:
                 logger.exception("Airtable sync failed for %s", user.email)
