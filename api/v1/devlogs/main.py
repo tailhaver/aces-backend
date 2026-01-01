@@ -2,10 +2,10 @@
 
 import asyncio
 import hmac
+import logging
 import os
 from datetime import datetime
 from enum import IntEnum
-from logging import error
 from typing import Optional
 
 import sqlalchemy
@@ -18,6 +18,8 @@ from api.v1.auth import require_auth
 from db import get_db
 from lib.ratelimiting import limiter
 from models.main import Devlog, User, UserProject
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 api = Api(os.environ["AIRTABLE_API_KEY"])
@@ -193,7 +195,7 @@ async def create_devlog(
             )
         except Exception as e:
             await session.rollback()
-            error("Error creating devlog review row in Airtable:", exc_info=e)
+            logger.exception("Error creating devlog review row in Airtable")
             raise HTTPException(
                 status_code=500, detail="Error creating devlog review record"
             ) from e
@@ -203,7 +205,7 @@ async def create_devlog(
         return DevlogResponse.model_validate(new_devlog)
     except Exception as e:
         await session.rollback()
-        error("Error creating devlog:", exc_info=e)
+        logger.exception("Error creating devlog")
         raise HTTPException(status_code=500, detail="Error creating devlog") from e
 
 
@@ -303,7 +305,7 @@ async def review_devlog(
     except HTTPException:  # pass through HTTPExceptions
         raise
     except Exception as e:
-        error("Error committing review decision:", exc_info=e)
+        logger.exception("Error committing review decision")
         raise HTTPException(
             status_code=500, detail="Error saving review decision"
         ) from e

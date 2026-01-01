@@ -3,20 +3,24 @@
 # from fastapi import FastAPI
 # from typing import Annotated
 # import asyncpg
+import asyncio
+import logging
 import os
+import time
 from contextlib import asynccontextmanager
-from logging import basicConfig
 from typing import Any
 
 # import orjson
 # import os
 import dotenv
+import sentry_sdk
 from fastapi import Depends, FastAPI, HTTPException, Request  # , Form
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse  # , RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi_pagination import add_pagination
+from sentry_sdk.integrations.logging import EventHandler, LoggingIntegration
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -39,15 +43,50 @@ from api.v1.devlogs import router as devlogs_router
 from api.v1.projects import router as projects_router
 from api.v1.users import router as users_router
 from db import engine, run_migrations_async  # , get_db
-from lib.ratelimiting import limiter
 from jobs import cleanup_deleted_users, run_cleanup
-import asyncio
+from lib.ratelimiting import limiter
+
 # from api.users import foo
 
 dotenv.load_dotenv()
 
+sentry_dsn = os.getenv("SENTRY_DSN")
+if sentry_dsn:
+    sentry_sdk.init(
+        dsn=sentry_dsn,
+        enable_logs=True,
+        integrations=[
+            LoggingIntegration(
+                sentry_logs_level=logging.INFO,
+                level=logging.INFO,
+                event_level=logging.ERROR,
+            ),
+        ],
+        environment=os.getenv("ENVIRONMENT", "development"),
+    )
+
 log_level = os.getenv("LOG_LEVEL", "INFO").upper()
-basicConfig(level=log_level)
+logging.basicConfig(
+    level=log_level,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    datefmt="%Y-%m-%dT%H:%M:%S%z",
+)
+
+# Configure aces loggers explicitly (uvicorn can override basicConfig)
+_log_formatter = logging.Formatter(
+    "%(asctime)s %(levelname)s %(name)s %(message)s",
+    datefmt="%Y-%m-%dT%H:%M:%S%z",
+)
+_log_handler = logging.StreamHandler()
+_log_handler.setFormatter(_log_formatter)
+_sentry_handler = EventHandler(level=logging.ERROR) if sentry_dsn else None
+for _logger_name in ("aces.access", "aces.security"):
+    _logger = logging.getLogger(_logger_name)
+    _logger.setLevel(log_level)
+    _logger.addHandler(_log_handler)
+    if _sentry_handler:
+        _logger.addHandler(_sentry_handler)
+    _logger.propagate = False
 
 # engine = create_async_engine(
 #     url=os.getenv("SQL_CONNECTION_STR", ""),
@@ -108,6 +147,59 @@ class CloudflareRealIPMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    """Middleware to log HTTP requests for observability and security monitoring"""
+
+    async def dispatch(self, request: Request, call_next: Any):
+        start_time = time.perf_counter()
+
+        try:
+            response = await call_next(request)
+        except Exception:
+            logging.getLogger("aces.access").exception(
+                "Unhandled exception in request %s %s", request.method, request.url.path
+            )
+            raise
+
+        duration_ms = (time.perf_counter() - start_time) * 1000
+        client_ip = request.client.host if request.client else "unknown"
+        user_id = self._get_user_identifier(request)
+
+        method = request.method
+        path = request.url.path
+        status_code = response.status_code
+
+        if status_code >= 500:
+            log_level = logging.ERROR
+        elif status_code >= 400:
+            log_level = logging.WARNING
+        else:
+            log_level = logging.INFO
+
+        logger = logging.getLogger("aces.access")
+        logger.log(
+            log_level,
+            "%s %s %d %.0fms ip=%s user=%s",
+            method,
+            path,
+            status_code,
+            duration_ms,
+            client_ip,
+            user_id,
+        )
+
+        return response
+
+    def _get_user_identifier(self, request: Request) -> str:
+        """Get user identifier from authenticated request state"""
+        user = getattr(request.state, "user", None)
+        if user and isinstance(user, dict):
+            user_id = user.get("id")
+            if user_id is not None:
+                return str(user_id)
+        return "anon"
+
+
 app = FastAPI(
     lifespan=lifespan,
     title="Aces Backend API",
@@ -115,10 +207,26 @@ app = FastAPI(
     swagger_ui_oauth2_redirect_url=None,
 )
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore
+
+
+def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    """Custom rate limit handler with logging"""
+    rate_logger = logging.getLogger("aces.security")
+    client_ip = request.client.host if request.client else "unknown"
+    rate_logger.warning(
+        "RATE_LIMIT_EXCEEDED ip=%s path=%s method=%s",
+        client_ip,
+        request.url.path,
+        request.method,
+    )
+    return _rate_limit_exceeded_handler(request, exc)
+
+
+app.add_exception_handler(RateLimitExceeded, rate_limit_handler)  # type: ignore
 if os.getenv("CLOUDFLARE_IP", "false").lower() == "true":
     app.add_middleware(CloudflareRealIPMiddleware)
 app.add_middleware(SlowAPIMiddleware)
+app.add_middleware(RequestLoggingMiddleware)
 
 ALLOWED_ORIGINS = [o for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o]
 app.add_middleware(

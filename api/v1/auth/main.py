@@ -2,13 +2,14 @@
 
 import asyncio
 import json
+import logging
 import os
 import secrets
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from functools import wraps
-from logging import error
 from typing import Any, Awaitable, Callable, Optional
+
 
 import jwt
 
@@ -30,6 +31,8 @@ from lib.hackatime import get_account
 from lib.ratelimiting import limiter
 from lib.responses import SimpleResponse
 from models.main import User
+
+logger = logging.getLogger(__name__)
 
 TOKEN_EXPIRY_SECONDS = 604800  # 7 days
 
@@ -250,7 +253,10 @@ async def refresh_token(request: Request, response: Response) -> SimpleResponse:
             decoded_jwt["iat"], timezone.utc
         ):
             raise HTTPException(status_code=401)
+    except HTTPException:
+        raise
     except Exception as e:
+        logger.exception("Error refreshing session token")
         raise HTTPException(status_code=401) from e
     ret_jwt = await generate_session_id(decoded_jwt["sub"])
     response.set_cookie(
@@ -272,7 +278,7 @@ async def send_otp_code(to_email: str, old_email: Optional[str] = None) -> bool:
             lambda: otp_table.create({"OTP": str(otp), "Email": to_email})
         )
     except Exception as e:
-        error("Error sending OTP email:", exc_info=e)
+        logger.exception("Error sending OTP email")
         raise HTTPException(status_code=500, detail="Error sending OTP email") from e
 
     return True
@@ -345,6 +351,7 @@ async def validate_otp(
                     detail="User with this email already exists",
                 ) from e
             except Exception as e:  # type: ignore # pylint: disable=broad-exception-caught
+                logger.exception("Error updating user email")
                 raise HTTPException(
                     status_code=500, detail="Error updating email"
                 ) from e
@@ -381,6 +388,7 @@ async def validate_otp(
                     detail="User integrity error",
                 ) from e
             except Exception as e:  # type: ignore # pylint: disable=broad-exception-caught
+                logger.exception("Error creating new user")
                 raise HTTPException(
                     status_code=500, detail="Error creating user"
                 ) from e
