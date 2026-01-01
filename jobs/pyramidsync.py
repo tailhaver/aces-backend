@@ -31,6 +31,7 @@ async def sync_users_to_airtable():
             select(User).options(selectinload(User.projects))
         )).scalars().all()
 
+        records = []
         async with httpx.AsyncClient(timeout=10) as client:
             for user in users:
                 idv = "error"
@@ -44,21 +45,16 @@ async def sync_users_to_airtable():
                 except Exception:
                     logger.warning("IDV check failed for %s", user.email, exc_info=True)
 
-                record = {
-                    "Email": user.email,
-                    "Hours": round(sum(p.hackatime_total_hours for p in user.projects), 2),
-                    "Projects Shipped": sum(1 for p in user.projects if p.shipped),
-                    "IDV Status": idv,
-                }
+                records.append({
+                    "fields": {
+                        "Email": user.email,
+                        "Hours": round(sum(p.hackatime_total_hours for p in user.projects), 2),
+                        "Projects Shipped": sum(1 for p in user.projects if p.shipped),
+                        "IDV Status": idv,
+                    }
+                })
 
-                try:
-                    def upsert_record(r):
-                        existing = table.first(formula=match({"Email": r["Email"]}))
-                        if existing:
-                            table.update(existing["id"], r)
-                        else:
-                            table.create(r)
-
-                    await asyncio.to_thread(lambda r=record: upsert_record(r))
-                except Exception:
-                    logger.exception("Airtable sync failed for %s", user.email)
+        try:
+            await asyncio.to_thread(table.batch_upsert, records, key_fields=["Email"])
+        except Exception:
+            logger.exception("Airtable batch sync failed")
