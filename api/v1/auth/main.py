@@ -88,11 +88,11 @@ class OtpClientResponse(BaseModel):
     @field_validator("referral_code")
     @classmethod
     def validate_referral_code(cls, v: Optional[str]):
-        """Validate if referral code is alphanumeric and under 64 char"""
+        """Validate if referral code is alphanumeric and up to 64 chars"""
         if v is None:
             return v
-        if not v.isalnum() or len(v) >= 64:
-            raise ValueError("Referral code must be alphanumeric and under 64 chars")
+        if not v.isalnum() or len(v) > 64:
+            raise ValueError("Referral code must be alphanumeric and at most 64 chars")
         
         return v
 
