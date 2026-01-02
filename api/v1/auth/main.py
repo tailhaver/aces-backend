@@ -75,6 +75,7 @@ class OtpClientResponse(BaseModel):
 
     email: str
     otp: int
+    referral_code: Optional[str] = None
 
     @field_validator("otp")
     @classmethod
@@ -82,6 +83,17 @@ class OtpClientResponse(BaseModel):
         """Validate that OTP is a 6-digit number"""
         if not 100000 <= v <= 999999:
             raise ValueError("OTP must be a 6-digit number")
+        return v
+
+    @field_validator("referral_code")
+    @classmethod
+    def validate_referral_code(cls, v: Optional[str]):
+        """Validate if referral code is alphanumeric and up to 64 chars"""
+        if v is None:
+            return v
+        if not v.isalnum() or len(v) > 64:
+            raise ValueError("Referral code must be alphanumeric and at most 64 chars")
+
         return v
 
 
@@ -330,8 +342,9 @@ async def validate_otp(
     result = await session.execute(
         sqlalchemy.select(User).where(User.email == otp_client_response.email)
     )
+    existing_user = result.scalar_one_or_none()
 
-    if result.scalar_one_or_none() is None:
+    if existing_user is None:
         if old_email is not None:
             # updating email flow
             user_raw = await session.execute(
@@ -366,6 +379,7 @@ async def validate_otp(
                 email=otp_client_response.email,
                 hackatime_id=hackatime_data.id if hackatime_data else None,
                 username=hackatime_data.username if hackatime_data else None,
+                referral_code_used=otp_client_response.referral_code,
             )
             try:
                 session.add(user)
@@ -392,7 +406,6 @@ async def validate_otp(
                 raise HTTPException(
                     status_code=500, detail="Error creating user"
                 ) from e
-
     response.set_cookie(
         key="sessionId", value=ret_jwt, httponly=True, secure=True, max_age=604800
     )

@@ -63,6 +63,9 @@ class User(Base):
         nullable=False,
         default=0,
     )
+    referral_code_used: Mapped[Optional[str]] = MappedColumn(
+        String(64), nullable=True, default=None
+    )
 
 
 class UserProject(Base):

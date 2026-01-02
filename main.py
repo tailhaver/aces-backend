@@ -43,7 +43,7 @@ from api.v1.devlogs import router as devlogs_router
 from api.v1.projects import router as projects_router
 from api.v1.users import router as users_router
 from db import engine, run_migrations_async  # , get_db
-from jobs import cleanup_deleted_users, run_cleanup
+from jobs import cleanup_deleted_users, run_cleanup, run_pyramid_sync
 from lib.ratelimiting import limiter
 
 # from api.users import foo
@@ -117,12 +117,18 @@ async def lifespan(_app: FastAPI):
     except Exception:
         pass
     cleanup_task = asyncio.create_task(run_cleanup())
+    pyramid_sync_task = asyncio.create_task(run_pyramid_sync())
 
     yield
 
     cleanup_task.cancel()
+    pyramid_sync_task.cancel()
     try:
         await cleanup_task
+    except asyncio.CancelledError:
+        pass
+    try:
+        await pyramid_sync_task
     except asyncio.CancelledError:
         pass
 
