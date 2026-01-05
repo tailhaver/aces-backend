@@ -16,7 +16,7 @@ import httpx
 import redis.asyncio as redis
 import sqlalchemy
 import validators
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
 from fastapi.exceptions import HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -238,6 +238,7 @@ async def delete_user(
 @require_auth
 async def recalculate_hackatime_time(
     request: Request,
+    response: Response,  # pylint: disable=unused-argument
     session: AsyncSession = Depends(get_db),
 ) -> SimpleResponse:
     """Recalculate Hackatime time for a user"""
@@ -315,6 +316,7 @@ async def recalculate_hackatime_time(
 @require_auth
 async def retry_hackatime_link(
     request: Request,
+    response: Response,  # pylint: disable=unused-argument
     session: AsyncSession = Depends(get_db),
 ) -> SimpleResponse:
     """Retry linking Hackatime account for a user"""
@@ -338,7 +340,11 @@ async def retry_hackatime_link(
 
     hackatime_data = None
     try:
-        hackatime_data = await get_account(user_email)
+        if not user.hackatime_id:
+            raise HTTPException(
+                status_code=400, detail="User does not have a linked Hackatime ID"
+            )
+        hackatime_data = await get_account(user.hackatime_id)
     except Exception as e:  # type: ignore # pylint: disable=broad-exception-caught
         logger.exception("Error fetching Hackatime account data")
         raise HTTPException(

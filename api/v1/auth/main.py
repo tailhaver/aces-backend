@@ -25,9 +25,9 @@ from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+import httpx
 
 from db import get_db
-from lib.hackatime import get_account
 from lib.ratelimiting import limiter
 from lib.responses import SimpleResponse
 from models.main import User
@@ -272,7 +272,12 @@ async def refresh_token(request: Request, response: Response) -> SimpleResponse:
         raise HTTPException(status_code=401) from e
     ret_jwt = await generate_session_id(decoded_jwt["sub"])
     response.set_cookie(
-        key="sessionId", value=ret_jwt, httponly=True, secure=True, max_age=604800
+        key="sessionId",
+        value=ret_jwt,
+        httponly=True,
+        secure=os.getenv("ENVIRONMENT", "").lower() == "production",
+        samesite="lax",
+        max_age=604800,
     )
     return SimpleResponse(success=True)
 
@@ -296,67 +301,149 @@ async def send_otp_code(to_email: str, old_email: Optional[str] = None) -> bool:
     return True
 
 
-@router.post("/send_otp")
-@limiter.limit("10/minute")  # type: ignore
-async def send_otp(
+@router.get("/oauth")
+@limiter.limit("3/minute")  # type: ignore
+async def redirect_to_oauth(
     request: Request,  # pylint: disable=W0613
     response: Response,  # pylint: disable=W0613
-    otp_request: OtpClientRequest,
-) -> SimpleResponse:
-    """Send OTP to the user's email"""
-    await send_otp_code(to_email=otp_request.email)
-    return SimpleResponse(success=True)
-
-
-@router.post("/validate_otp")
-@limiter.limit("10/minute")  # type: ignore
-async def validate_otp(
-    request: Request,  # pylint: disable=W0613
-    response: Response,
-    otp_client_response: OtpClientResponse,
-    session: AsyncSession = Depends(get_db),
-) -> OTPSuccessResponse:
-    """Validate the OTP provided by the user"""
-
-    if not os.getenv("JWT_SECRET"):
-        raise HTTPException(status_code=500)
-    redis_data = await r.get(f"otp-{otp_client_response.email}")
-    if redis_data is None:
-        raise HTTPException(status_code=401, detail="Invalid OTP")
-    try:
-        stored_otp_json = json.loads(redis_data)
-    except Exception as e:
-        raise HTTPException(status_code=401, detail="Invalid OTP") from e
-    if not stored_otp_json:
-        raise HTTPException(status_code=401, detail="Invalid OTP")
-    stored_otp = stored_otp_json.get("otp")
-    old_email = stored_otp_json.get("old")
-    if not stored_otp:
-        raise HTTPException(status_code=401, detail="Invalid OTP")
-    if stored_otp != otp_client_response.otp:
-        raise HTTPException(status_code=401, detail="Invalid OTP")
-
-    await r.delete(f"otp-{otp_client_response.email}")
-    ret_jwt = await generate_session_id(otp_client_response.email)
-
-    result = await session.execute(
-        sqlalchemy.select(User).where(User.email == otp_client_response.email)
+) -> RedirectResponse:
+    client_id = os.getenv("HCA_CLIENT_ID", None)
+    if client_id is None:
+        raise HTTPException(status_code=500, detail="Client ID not set")
+    redirect_uri = (
+        os.getenv("HCA_REDIRECT_URI", None)
+        or "http://localhost:8000/api/v1/auth/callback"
     )
-    existing_user = result.scalar_one_or_none()
+    scopes = os.getenv("SCOPES", "email")
+    return RedirectResponse(
+        f"https://auth.hackclub.com/oauth/authorize?client_id={client_id}&redirect_uri={redirect_uri}&response_type=code&scope={scopes}"
+    )
 
-    if existing_user is None:
-        if old_email is not None:
-            # updating email flow
-            user_raw = await session.execute(
-                sqlalchemy.select(User).where(User.email == old_email)
+
+@router.get("/callback")
+@limiter.limit("3/minute")  # type: ignore
+async def redirect_to_profile(
+    request: Request,  # pylint: disable=W0613
+    response: Response,  # pylint: disable=W0613
+    code: Optional[str] = None,
+    session: AsyncSession = Depends(get_db),
+) -> RedirectResponse:
+    if code is None:
+        raise HTTPException(status_code=400, detail="No authorization code provided")
+
+    if os.getenv("HCA_CLIENT_ID") is None or os.getenv("HCA_CLIENT_SECRET") is None:
+        raise HTTPException(
+            status_code=500, detail="Client ID or Client Secret not set"
+        )
+
+    post_data: dict[str, str] = {
+        "client_id": os.getenv("HCA_CLIENT_ID") or "",
+        "client_secret": os.getenv("HCA_CLIENT_SECRET") or "",
+        "redirect_uri": os.getenv("HCA_REDIRECT_URI", None)
+        or "http://localhost:8000/api/v1/auth/callback",
+        "code": code,
+        "grant_type": "authorization_code",
+    }
+
+    async with httpx.AsyncClient() as client:
+        hca_request = await client.post(
+            "https://auth.hackclub.com/oauth/token", data=post_data
+        )
+
+        try:
+            hca_request.raise_for_status()
+        except httpx.HTTPStatusError:
+            raise HTTPException(status_code=500, detail="Encountered error getting token")
+
+        hca_response = hca_request.json()
+
+        access_token = hca_response.get("access_token")
+        if access_token is None:
+            raise HTTPException(
+                status_code=500, detail="Did not receive an access token"
             )
-            user = user_raw.scalar_one_or_none()
-            if user is None:
-                raise HTTPException(status_code=404)  # user doesn't exist
-            user.email = otp_client_response.email
+
+        hca_info_request = await client.get(
+            "https://auth.hackclub.com/api/v1/me",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+
+        try:
+            hca_info_request.raise_for_status()
+        except httpx.HTTPStatusError:
+            raise HTTPException(status_code=500, detail="Encountered error getting user info")
+
+        hca_info = hca_info_request.json().get("identity")
+
+        if hca_info is None:
+            raise HTTPException(
+                status_code=500, detail="Received unexpected response from HCA"
+            )
+        email = hca_info.get("primary_email")
+
+        result = await session.execute(
+            sqlalchemy.select(User).where(User.email == email)
+        )
+        existing_user = result.scalar_one_or_none()
+
+        if existing_user is None:
+            new_user = User()
+            new_user.email = hca_info.get("primary_email")
+            new_user.slack_id = hca_info.get("slack_id")
+            new_user.idv_status = hca_info.get("verification_status")
+            new_user.ysws_eligible = hca_info.get("ysws_eligible")
+
+            hackatime_request = await client.get(
+                f"https://hackatime.hackclub.com/api/v1/users/{new_user.slack_id}/stats"
+            )
+
             try:
+                hackatime_request.raise_for_status()
+            except httpx.HTTPStatusError:
+                raise HTTPException(status_code=500, detail="Could not reach Hackatime")
+
+            hackatime_response = hackatime_request.json()
+
+            data = hackatime_response.get("data")
+            if not isinstance(data, dict):
+                logger.error(
+                    "Unexpected Hackatime response format: %s",
+                    hackatime_response
+                )
+                raise HTTPException(
+                    status_code=502,
+                    detail="Received invalid data from Hackatime"
+                )
+            
+            user_id = data.get("user_id") # type: ignore
+            if user_id is None:
+                logger.error(
+                    "Hackatime response missing 'user_id' field: %s",
+                    hackatime_response,
+                )
+                raise HTTPException(
+                    status_code=502,
+                    detail="Received incomplete data from Hackatime service",
+                )
+            
+            try:
+                new_user.hackatime_id = int(user_id)
+            except (TypeError, ValueError) as exc:
+                logger.error(
+                    "Invalid 'user_id' value in Hackatime response: %s",
+                    hackatime_response,
+                )
+                raise HTTPException(
+                    status_code=502,
+                    detail="Received invalid user ID from Hackatime service",
+                ) from exc
+
+
+
+            try:
+                session.add(new_user)
                 await session.commit()
-                await session.refresh(user)
+                await session.refresh(new_user)
             except IntegrityError as e:
                 await session.rollback()
                 raise HTTPException(
@@ -368,49 +455,22 @@ async def validate_otp(
                 raise HTTPException(
                     status_code=500, detail="Error updating email"
                 ) from e
-        else:
-            # new user flow
-            hackatime_data = None
-            try:
-                hackatime_data = await get_account(otp_client_response.email)
-            except Exception:  # type: ignore # pylint: disable=broad-exception-caught
-                pass  # unable to fetch hackatime data, continue anyway
-            user = User(
-                email=otp_client_response.email,
-                hackatime_id=hackatime_data.id if hackatime_data else None,
-                username=hackatime_data.username if hackatime_data else None,
-                referral_code_used=otp_client_response.referral_code,
-            )
-            try:
-                session.add(user)
-                await session.commit()
-                await session.refresh(user)
-            except IntegrityError as e:
-                await session.rollback()
-                if "email" in str(e.orig).lower():
-                    raise HTTPException(
-                        status_code=409,
-                        detail="User with this email already exists",
-                    ) from e
-                if "hackatime_id" in str(e.orig).lower():
-                    raise HTTPException(
-                        status_code=409,
-                        detail="User with this hackatime_id already exists",
-                    ) from e
-                raise HTTPException(
-                    status_code=409,
-                    detail="User integrity error",
-                ) from e
-            except Exception as e:  # type: ignore # pylint: disable=broad-exception-caught
-                logger.exception("Error creating new user")
-                raise HTTPException(
-                    status_code=500, detail="Error creating user"
-                ) from e
-    response.set_cookie(
-        key="sessionId", value=ret_jwt, httponly=True, secure=True, max_age=604800
-    )
-    return OTPSuccessResponse(success=True, sessionId=ret_jwt)
 
+        ret_jwt = await generate_session_id(email)
+        redirect_response = RedirectResponse(
+            url=os.getenv(
+                "HCA_FINAL_URI", "https://aces.hackclub.com/dashboard/profile"
+            )
+        )
+        redirect_response.set_cookie(
+            key="sessionId",
+            value=ret_jwt,
+            httponly=True,
+            secure=os.getenv("ENVIRONMENT", "").lower() == "production",
+            max_age=604800,
+            samesite="lax",
+        )
+        return redirect_response
 
 async def generate_session_id(email: str) -> str:
     """Generate a JWT session ID for the given email"""

@@ -1,13 +1,10 @@
 """Hackatime API stuff"""
 
 import os
-from logging import warning
 from typing import Dict, List, Optional
 
 import httpx
-import validators
 from pydantic import BaseModel
-from sqlalchemy import text
 
 HACKATIME_ADMIN_API_URL = "https://hackatime.hackclub.com/api/admin/v1"
 HACKATIME_API_URL = "https://hackatime.hackclub.com/api/v1"
@@ -26,11 +23,11 @@ class HackatimeAccountResponse(BaseModel):
     username: str
 
 
-async def get_account(email: str) -> Optional[HackatimeAccountResponse]:
-    """Fetch Hackatime account details by email
+async def get_account(user_id: int) -> Optional[HackatimeAccountResponse]:
+    """Fetch Hackatime account details by user ID
 
     Args:
-        email (str): User email address.
+        user_id (int): Hackatime user ID.
 
     Raises:
         ValueError: Invalid email format.
@@ -40,44 +37,44 @@ async def get_account(email: str) -> Optional[HackatimeAccountResponse]:
         Optional[HackatimeAccountResponse]: Hackatime account details or None if not found.
     """
 
-    if not HACKATIME_API_KEY:
-        warning("HACKATIME_API_KEY not set, returning mock data")
-        return HackatimeAccountResponse(id=1, username="TestUser")
+    #     if not HACKATIME_API_KEY:
+    #         warning("HACKATIME_API_KEY not set, returning mock data")
+    #         return HackatimeAccountResponse(id=1, username="TestUser")
 
-    if not validators.email(email):
-        raise ValueError("Invalid email format.")
+    #     if not validators.email(email):
+    #         raise ValueError("Invalid email format.")
 
-    sanitized_email = email.replace("'", "''")
+    #     sanitized_email = email.replace("'", "''")
 
-    headers = {
-        "Authorization": f"Bearer {HACKATIME_API_KEY}",
-        "Content-Type": "application/json",
-    }
+    #     headers = {
+    #         "Authorization": f"Bearer {HACKATIME_API_KEY}",
+    #         "Content-Type": "application/json",
+    #     }
 
-    query = (
-        text("""SELECT
-    users.id,
-    users.username,
-    users.github_username,
-    users.slack_username,
-    email_addresses.email
-FROM
-    users
-    INNER JOIN email_addresses ON users.id = email_addresses.user_id
-WHERE
-    email_addresses.email = :sanitized_email
-LIMIT 1;""")
-        .bindparams(sanitized_email=sanitized_email)
-        .compile(compile_kwargs={"literal_binds": True})
-    )
+    #     query = (
+    #         text("""SELECT
+    #     users.id,
+    #     users.username,
+    #     users.github_username,
+    #     users.slack_username,
+    #     email_addresses.email
+    # FROM
+    #     users
+    #     INNER JOIN email_addresses ON users.id = email_addresses.user_id
+    # WHERE
+    #     email_addresses.email = :sanitized_email
+    # LIMIT 1;""")
+    #         .bindparams(sanitized_email=sanitized_email)
+    #         .compile(compile_kwargs={"literal_binds": True})
+    #     )
 
-    body = {
-        "query": str(query),
-    }
+    #     body = {
+    #         "query": str(query),
+    #     }
 
     async with httpx.AsyncClient() as client:
         response = await client.post(
-            f"{HACKATIME_ADMIN_API_URL}/execute", json=body, headers=headers, timeout=10
+            f"{HACKATIME_API_URL}/users/{user_id}/stats", timeout=10
         )
 
     if response.status_code != 200:
@@ -89,14 +86,8 @@ LIMIT 1;""")
         return None
 
     try:
-        account_data = data.get("rows", [])[0]
-        username = (
-            account_data.get("username")[1]
-            or account_data.get("github_username")[1]
-            or account_data.get("slack_username")[1]
-            or "unknown"
-        )
-        user_id = account_data.get("id")[1]
+        account_data = data.get("data", [])[0]
+        username = account_data.get("username") or "unknown"
     except (IndexError, KeyError, TypeError) as e:
         raise UnknownError(f"Error parsing account data: {e}") from e
 
