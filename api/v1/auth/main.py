@@ -339,7 +339,7 @@ async def redirect_to_profile(
         "client_id": os.getenv("HCA_CLIENT_ID") or "",
         "client_secret": os.getenv("HCA_CLIENT_SECRET") or "",
         "redirect_uri": os.getenv("HCA_REDIRECT_URI", None)
-        or "https://localhost:8000/api/v1/auth/callback",
+        or "http://localhost:8000/api/v1/auth/callback",
         "code": code,
         "grant_type": "authorization_code",
     }
