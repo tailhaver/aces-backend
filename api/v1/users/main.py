@@ -161,12 +161,11 @@ async def update_user(
         if new_user is not None and new_user.id != user.id:
             raise HTTPException(status_code=409, detail="Username already in use")
 
-        user.username = new_username
+        user.username = new_username.lower()
 
         await session.commit()
         await session.refresh(user)
 
-        # await send_otp_code(to_email=update_request.email, old_email=user_email)
     except HTTPException:
         raise
     except Exception as e:  # type: ignore # pylint: disable=broad-exception-caught
