@@ -9,9 +9,7 @@ from .main import (
     refresh_token,
     require_auth,
     router,
-    send_otp,
     send_otp_code,
-    validate_otp,
 )
 
 __all__ = [
@@ -23,8 +21,6 @@ __all__ = [
     "refresh_token",
     "require_auth",
     "router",
-    "send_otp",
-    "validate_otp",
     "permission_dependency",
     "Permission",
 ]
