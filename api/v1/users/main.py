@@ -30,7 +30,7 @@ from lib.responses import SimpleResponse
 from models.main import User
 
 logger = logging.getLogger(__name__)
-USERNAME_PATTERN = re.compile(r"^\w+$")
+USERNAME_PATTERN = re.compile(r"^[a-zA-Z0-9_]+$")
 
 
 @asynccontextmanager
@@ -170,9 +170,9 @@ async def update_user(
     except HTTPException:
         raise
     except Exception as e:  # type: ignore # pylint: disable=broad-exception-caught
-        logger.exception("Failed to send verification code")
+        logger.exception("Failed to update username: %s", e)
         raise HTTPException(
-            status_code=500, detail="Failed to send verification code"
+            status_code=500, detail="Could not update username"
         ) from e
 
     return SimpleResponse(success=True)
