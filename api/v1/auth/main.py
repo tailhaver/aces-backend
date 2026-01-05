@@ -25,6 +25,7 @@ from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+import httpx
 
 from db import get_db
 from lib.hackatime import get_account
@@ -272,7 +273,7 @@ async def refresh_token(request: Request, response: Response) -> SimpleResponse:
         raise HTTPException(status_code=401) from e
     ret_jwt = await generate_session_id(decoded_jwt["sub"])
     response.set_cookie(
-        key="sessionId", value=ret_jwt, httponly=True, secure=True, max_age=604800
+        key="sessionId", value=ret_jwt, httponly=True, secure=False, max_age=604800
     )
     return SimpleResponse(success=True)
 
@@ -295,6 +296,127 @@ async def send_otp_code(to_email: str, old_email: Optional[str] = None) -> bool:
 
     return True
 
+@router.get("/oauth")
+@limiter.limit("3/minute") # type: ignore
+async def redirect_to_oauth(
+    request: Request, #pylint: disable=W0613
+    response: Response #pylint: disable=W0613
+) -> RedirectResponse:
+    client_id = os.getenv("HCA_CLIENT_ID", None)
+    if client_id is None:
+        raise HTTPException(status_code=500, detail="Client ID not set")
+    redirect_uri = os.getenv("HCA_REDIRECT_URI", None) or "http://localhost:8000/api/v1/auth/callback"
+    scopes = os.getenv("SCOPES", "email")
+    return RedirectResponse(f"https://auth.hackclub.com/oauth/authorize?client_id={client_id}&redirect_uri={redirect_uri}&response_type=code&scope={scopes}")
+
+@router.get("/callback")
+@limiter.limit("3/minute") # type: ignore
+async def redirect_to_profile(
+    request: Request, #pylint: disable=W0613
+    response: Response, #pylint: disable=W0613
+    code: Optional[str] = None,
+    session: AsyncSession = Depends(get_db)
+) -> RedirectResponse:
+    
+    if code is None:
+        raise HTTPException(status_code=400, detail="No authorization code provided")
+    
+    if os.getenv("HCA_CLIENT_ID") is None or os.getenv("HCA_CLIENT_SECRET") is None:
+        raise HTTPException(status_code=500, detail="Client ID or Client Secret not set")
+    
+    post_data: dict[str, str] = {
+        "client_id": os.getenv("HCA_CLIENT_ID") or "",
+        "client_secret": os.getenv("HCA_CLIENT_SECRET") or "",
+        "redirect_uri": os.getenv("HCA_REDIRECT_URI", None) or "https://localhost:8000/api/v1/auth/callback",
+        "code": code,
+        "grant_type": "authorization_code"
+    }
+    
+    async with httpx.AsyncClient() as client:
+        hca_request = await client.post(
+            "https://auth.hackclub.com/oauth/token",
+            data=post_data
+        )
+
+        try:
+            hca_request.raise_for_status()
+        except httpx.HTTPStatusError:
+            raise HTTPException(status_code=500, detail="Could not reach HCA")
+        
+        hca_response = hca_request.json()
+
+        access_token = hca_response.get("access_token")
+        if access_token is None:
+            raise HTTPException(status_code=500, detail="Did not recieve an access token")
+        
+        hca_info_request = await client.get(
+            "https://auth.hackclub.com/api/v1/me",
+            headers={"Authorization": f"Bearer {access_token}"}
+        )
+
+        try:
+            hca_info_request.raise_for_status()
+        except httpx.HTTPStatusError:
+            raise HTTPException(status_code=500, detail="Could not reach HCA")
+        
+        hca_info = hca_info_request.json().get("identity")
+        print(hca_info)
+        email = hca_info.get("primary_email")
+
+        result = await session.execute(
+            sqlalchemy.select(User).where(User.email == email)
+        )
+        existing_user = result.scalar_one_or_none()
+
+        if existing_user is None:
+            new_user = User()
+            new_user.email = hca_info.get("primary_email")
+            new_user.slack_id=hca_info.get("slack_id")
+            new_user.idv_status=hca_info.get("verification_status")
+
+            hackatime_request = await client.get(
+                f"https://hackatime.hackclub.com/api/v1/users/{new_user.slack_id}/stats"
+            )
+
+            try:
+                hackatime_request.raise_for_status()
+            except httpx.HTTPStatusError:
+                raise HTTPException(status_code=500, detail="Could not reach HCA")
+            
+            hackatime_response = hackatime_request.json()
+
+            new_user.hackatime_id = int(hackatime_response.get("data").get("user_id"))
+
+            print(new_user)
+
+            try:
+                session.add(new_user)
+                await session.commit()
+                await session.refresh(new_user)
+            except IntegrityError as e:
+                await session.rollback()
+                raise HTTPException(
+                    status_code=409,
+                    detail="User with this email already exists",
+                ) from e
+            except Exception as e:  # type: ignore # pylint: disable=broad-exception-caught
+                logger.exception("Error updating user email")
+                raise HTTPException(
+                    status_code=500, detail="Error updating email"
+                ) from e
+            
+        ret_jwt = await generate_session_id(email)
+        redirect_response = RedirectResponse(url=os.getenv("HCA_FINAL_URI", "https://aces.hackclub.com/dashboard/profile"))
+        redirect_response.set_cookie(
+            key="sessionId", 
+            value=ret_jwt, 
+            httponly=True, 
+            secure=os.getenv("ENVIRONMENT") == "production", 
+            max_age=604800,
+            samesite="lax"
+        )
+        return redirect_response
+        
 
 @router.post("/send_otp")
 @limiter.limit("10/minute")  # type: ignore
