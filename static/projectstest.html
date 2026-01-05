@@ -71,26 +71,33 @@
         <pre id="auth-output"></pre>
     </div>
 
+    <div class="section">
+        <h2>4. Link Hackatime Projects</h2>
+        <select id="project-select">
+            <option value="">-- Select a project --</option>
+        </select>
+        <select id="hackatime-project-select">
+            <option value="">-- Select a Hackatime project --</option>
+        </select>
+        <button onclick="linkHackatimeProject()">Link Project</button>
+        <pre id="link-output"></pre>
+    </div>
+
+    <div class="section">
+        <h2>5. Get User Info</h2>
+        <button onclick="getUserInfo()">Get User Info</button>
+        <pre id="user-output"></pre>
+    </div>
+
+    <div class="section">
+        <h2>6. Reload Hackatime Hours</h2>
+        <button onclick="recalculateHackatimeTime()">Recalculate Hackatime Hours</button>
+        <pre id="recalc-output"></pre>
+    </div>
+
     <script>
-        async function getProjects() {
-            try {
-                const response = await fetch('/api/v1/projects', {
-                    method: 'GET',
-                    credentials: 'include' // Include cookies
-                });
-                
-                const data = await response.json();
-                document.getElementById('projects-output').textContent = JSON.stringify(data, null, 2);
-                
-                if (!response.ok) {
-                    document.getElementById('projects-output').textContent = 
-                        `Error ${response.status}: ${JSON.stringify(data, null, 2)}`;
-                }
-            } catch (error) {
-                document.getElementById('projects-output').textContent = 
-                    `Network Error: ${error.message}`;
-            }
-        }
+        const HACKATIME_START_DATE = '2025-12-01T00:00:00Z';
+        let cachedProjects = [];
 
         async function createProject() {
             const projectName = document.getElementById('project-name').value;
@@ -101,7 +108,7 @@
             }
             
             try {
-                const response = await fetch('/api/v1/projects', {
+                const response = await fetch('/api/v1/projects/', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -117,12 +124,33 @@
                     document.getElementById('project-name').value = '';
                     // Refresh projects list
                     getProjects();
+                    refreshProjectList();
                 } else {
                     document.getElementById('create-output').textContent = 
                         `Error ${response.status}: ${JSON.stringify(data, null, 2)}`;
                 }
             } catch (error) {
                 document.getElementById('create-output').textContent = 
+                    `Network Error: ${error.message}`;
+            }
+        }
+
+        async function getProjects() {
+            try {
+                const response = await fetch('/api/v1/projects/', {
+                    method: 'GET',
+                    credentials: 'include' // Include cookies
+                });
+                
+                const data = await response.json();
+                document.getElementById('projects-output').textContent = JSON.stringify(data, null, 2);
+                
+                if (!response.ok) {
+                    document.getElementById('projects-output').textContent = 
+                        `Error ${response.status}: ${JSON.stringify(data, null, 2)}`;
+                }
+            } catch (error) {
+                document.getElementById('projects-output').textContent = 
                     `Network Error: ${error.message}`;
             }
         }
@@ -148,9 +176,228 @@
             }
         }
 
-        // Auto-check auth on load
+        async function getUserInfo() {
+            try {
+                const response = await fetch('/api/v1/users/me', {
+                    method: 'GET',
+                    credentials: 'include'
+                });
+                
+                const data = await response.json();
+                document.getElementById('user-output').textContent = JSON.stringify(data, null, 2);
+                
+                if (!response.ok) {
+                    document.getElementById('user-output').textContent = 
+                        `Error ${response.status}: ${JSON.stringify(data, null, 2)}`;
+                }
+            } catch (error) {
+                document.getElementById('user-output').textContent = 
+                    `Network Error: ${error.message}`;
+            }
+        }
+
+        async function recalculateHackatimeTime() {
+            try {
+                const response = await fetch('/api/v1/users/recalculate_time', {
+                    method: 'POST',
+                    credentials: 'include'
+                });
+
+                const text = await response.text();
+                document.getElementById('recalc-output').textContent = text;
+
+                if (!response.ok) {
+                    document.getElementById('recalc-output').textContent =
+                        `Error ${response.status}: ${text}`;
+                    return;
+                }
+
+                // Refresh projects list to show updated hackatime_total_hours
+                await getProjects();
+                await refreshProjectList();
+            } catch (error) {
+                document.getElementById('recalc-output').textContent =
+                    `Network Error: ${error.message}`;
+            }
+        }
+
+        async function linkHackatimeProject() {
+            const projectId = document.getElementById('project-select').value;
+            const hackatimeProject = document.getElementById('hackatime-project-select').value;
+            
+            if (!projectId || !hackatimeProject) {
+                alert('Please select a project and a Hackatime project');
+                return;
+            }
+
+            const selectedProject = cachedProjects.find(p => String(p.project_id) === String(projectId));
+            if (!selectedProject) {
+                alert('Could not find selected project details; refresh the page and try again.');
+                return;
+            }
+
+            const existingHackatimeProjects = Array.isArray(selectedProject.hackatime_projects)
+                ? [...selectedProject.hackatime_projects]
+                : [];
+
+            if (!existingHackatimeProjects.includes(hackatimeProject)) {
+                existingHackatimeProjects.push(hackatimeProject);
+            }
+            
+            try {
+                const response = await fetch(`/api/v1/projects/${projectId}`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    credentials: 'include',
+                    body: JSON.stringify({ 
+                        // API requires project_name in the PATCH body
+                        project_name: selectedProject.project_name,
+                        hackatime_projects: existingHackatimeProjects
+                    })
+                });
+                
+                const data = await response.json();
+                document.getElementById('link-output').textContent = JSON.stringify(data, null, 2);
+                
+                if (response.ok) {
+                    alert('Hackatime project linked successfully!');
+                    refreshProjectList();
+                } else {
+                    document.getElementById('link-output').textContent = 
+                        `Error ${response.status}: ${JSON.stringify(data, null, 2)}`;
+                }
+            } catch (error) {
+                document.getElementById('link-output').textContent = 
+                    `Network Error: ${error.message}`;
+            }
+        }
+
+        async function refreshHackatimeProjectList() {
+            try {
+                const meResp = await fetch('/api/v1/users/me', {
+                    method: 'GET',
+                    credentials: 'include'
+                });
+
+                const meText = await meResp.text();
+                if (!meResp.ok) {
+                    document.getElementById('link-output').textContent =
+                        `GET /api/v1/users/me failed (${meResp.status})\n\n${meText}`;
+                    return;
+                }
+
+                let me;
+                try {
+                    me = JSON.parse(meText);
+                } catch {
+                    document.getElementById('link-output').textContent =
+                        `GET /api/v1/users/me returned non-JSON\n\n${meText}`;
+                    return;
+                }
+
+                const hackatimeId = me.hackatime_id;
+                if (!hackatimeId) {
+                    document.getElementById('link-output').textContent =
+                        'Your user does not have hackatime_id set yet.';
+                    return;
+                }
+
+                const statsUrl = `https://hackatime.hackclub.com/api/v1/users/${hackatimeId}/stats?features=projects&start_date=${encodeURIComponent(HACKATIME_START_DATE)}`;
+                const statsResp = await fetch(statsUrl);
+                const statsText = await statsResp.text();
+                if (!statsResp.ok) {
+                    document.getElementById('link-output').textContent =
+                        `Hackatime stats failed (${statsResp.status})\n\n${statsText}`;
+                    return;
+                }
+
+                let stats;
+                try {
+                    stats = JSON.parse(statsText);
+                } catch {
+                    document.getElementById('link-output').textContent =
+                        `Hackatime stats returned non-JSON\n\n${statsText}`;
+                    return;
+                }
+
+                const projects = stats?.data?.projects;
+                const hackSelect = document.getElementById('hackatime-project-select');
+                hackSelect.innerHTML = '<option value="">-- Select a Hackatime project --</option>';
+
+                if (Array.isArray(projects)) {
+                    projects.forEach(p => {
+                        if (!p || !p.name) return;
+                        const opt = document.createElement('option');
+                        opt.value = p.name;
+                        opt.textContent = p.name;
+                        hackSelect.appendChild(opt);
+                    });
+                }
+            } catch (error) {
+                document.getElementById('link-output').textContent =
+                    `Network Error: ${error.message}`;
+            }
+        }
+
+        // Populate project select dropdown
+        async function refreshProjectList() {
+            try {
+                const response = await fetch('/api/v1/projects/', {
+                    method: 'GET',
+                    credentials: 'include'
+                });
+                
+                const text = await response.text();
+                if (!response.ok) {
+                    document.getElementById('link-output').textContent =
+                        `GET /api/v1/projects/ failed (${response.status})\n\n${text}`;
+                    return;
+                }
+
+                let data;
+                try {
+                    data = JSON.parse(text);
+                } catch (e) {
+                    document.getElementById('link-output').textContent =
+                        `GET /api/v1/projects/ returned non-JSON\n\n${text}`;
+                    return;
+                }
+                const select = document.getElementById('project-select');
+                select.innerHTML = '<option value="">-- Select a project --</option>';
+
+                // Accept either an array response, or a wrapped shape.
+                let projects = data;
+                if (!Array.isArray(projects)) {
+                    if (Array.isArray(data.items)) projects = data.items;
+                    else if (Array.isArray(data.data)) projects = data.data;
+                    else projects = [];
+                }
+
+                cachedProjects = Array.isArray(projects) ? projects : [];
+
+                projects.forEach(project => {
+                    const option = document.createElement('option');
+                    option.value = project.project_id;
+                    option.textContent = project.project_name;
+                    select.appendChild(option);
+                });
+
+                if (projects.length === 0) {
+                    document.getElementById('link-output').textContent =
+                        `No projects found for this user.\nResponse was:\n${text}`;
+                }
+            } catch (error) {
+                console.error('Error loading projects:', error);
+            }
+        }
+
+        // Auto-check auth on load and populate projects
         window.onload = function() {
             checkAuth();
+            refreshProjectList();
+            refreshHackatimeProjectList();
         };
     </script>
 </body>
