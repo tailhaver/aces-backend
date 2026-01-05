@@ -398,7 +398,9 @@ async def redirect_to_profile(
             new_user.ysws_eligible = hca_info.get("ysws_eligible")
             referral_code = request.cookies.get("referralCode", "")
             if referral_code and referral_code.isalnum() and len(referral_code) <= 100:
-                new_user.referral_code_used = referral_code # only set the referral code if its valid
+                new_user.referral_code_used = (
+                    referral_code  # only set the referral code if its valid
+                )
 
             hackatime_request = await client.get(
                 f"https://hackatime.hackclub.com/api/v1/users/{new_user.slack_id}/stats"

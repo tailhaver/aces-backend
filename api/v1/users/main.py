@@ -170,9 +170,7 @@ async def update_user(
         raise
     except Exception as e:  # type: ignore # pylint: disable=broad-exception-caught
         logger.exception("Failed to update username: %s", e)
-        raise HTTPException(
-            status_code=500, detail="Could not update username"
-        ) from e
+        raise HTTPException(status_code=500, detail="Could not update username") from e
 
     return SimpleResponse(success=True)
 
