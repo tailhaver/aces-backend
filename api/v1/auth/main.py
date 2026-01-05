@@ -404,8 +404,6 @@ async def redirect_to_profile(
 
             new_user.hackatime_id = int(hackatime_response.get("data").get("user_id"))
 
-            print(new_user)
-
             try:
                 session.add(new_user)
                 await session.commit()
@@ -437,19 +435,6 @@ async def redirect_to_profile(
             samesite="lax",
         )
         return redirect_response
-
-
-@router.post("/send_otp")
-@limiter.limit("10/minute")  # type: ignore
-async def send_otp(
-    request: Request,  # pylint: disable=W0613
-    response: Response,  # pylint: disable=W0613
-    otp_request: OtpClientRequest,
-) -> SimpleResponse:
-    """Send OTP to the user's email"""
-    await send_otp_code(to_email=otp_request.email)
-    return SimpleResponse(success=True)
-
 
 async def generate_session_id(email: str) -> str:
     """Generate a JWT session ID for the given email"""
