@@ -28,7 +28,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import httpx
 
 from db import get_db
-from lib.hackatime import get_account
 from lib.ratelimiting import limiter
 from lib.responses import SimpleResponse
 from models.main import User

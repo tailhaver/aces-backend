@@ -1,13 +1,10 @@
 """Hackatime API stuff"""
 
 import os
-from logging import warning
 from typing import Dict, List, Optional
 
 import httpx
-import validators
 from pydantic import BaseModel
-from sqlalchemy import text
 
 HACKATIME_ADMIN_API_URL = "https://hackatime.hackclub.com/api/admin/v1"
 HACKATIME_API_URL = "https://hackatime.hackclub.com/api/v1"
