@@ -31,7 +31,7 @@ async def run_pyramid_sync():
         await sync_users_to_airtable()
     except Exception as e:
         logger.exception("Initial pyramid sync failed: %s", e)
-    
+
     while True:
         try:
             await asyncio.sleep(PYRAMID_SYNC_INTERVAL)
