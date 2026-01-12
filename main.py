@@ -297,6 +297,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 if os.getenv("ENVIRONMENT", "development") == "development":
 
     @app.get("/test-devlog-sync")
+    @require_auth
     async def serve_test_devlog_sync():
         return FileResponse("static/test-devlog-sync.html")
 
