@@ -99,6 +99,7 @@ class UserResponse(BaseModel):
     hackatime_id: Optional[int] = None
     permissions: list[int]
     marked_for_deletion: bool
+    cards: float
 
 
 class UpdateUserRequest(BaseModel):
@@ -202,6 +203,7 @@ async def get_user(
         username=user.username,
         hackatime_id=user.hackatime_id,
         marked_for_deletion=user.marked_for_deletion,
+        cards=user.cards_balance,
     )
 
 

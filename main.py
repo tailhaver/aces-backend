@@ -42,8 +42,13 @@ from api.v1.auth import router as auth_router
 from api.v1.devlogs import router as devlogs_router
 from api.v1.projects import router as projects_router
 from api.v1.users import router as users_router
-from db import engine, run_migrations_async  # , get_db
-from jobs import cleanup_deleted_users, run_cleanup, run_pyramid_sync
+from db import engine, get_session, run_migrations_async  # , get_db
+from jobs import (
+    cleanup_deleted_users,
+    run_cleanup,
+    run_devlog_review_sync,
+    run_pyramid_sync,
+)
 from lib.ratelimiting import limiter
 
 # from api.users import foo
@@ -118,17 +123,23 @@ async def lifespan(_app: FastAPI):
         pass
     cleanup_task = asyncio.create_task(run_cleanup())
     pyramid_sync_task = asyncio.create_task(run_pyramid_sync())
+    devlog_review_task = asyncio.create_task(run_devlog_review_sync())
 
     yield
 
     cleanup_task.cancel()
     pyramid_sync_task.cancel()
+    devlog_review_task.cancel()
     try:
         await cleanup_task
     except asyncio.CancelledError:
         pass
     try:
         await pyramid_sync_task
+    except asyncio.CancelledError:
+        pass
+    try:
+        await devlog_review_task
     except asyncio.CancelledError:
         pass
 
@@ -326,3 +337,8 @@ async def serve_admin(
 #     pass
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+@app.get("/test-devlog-sync")
+async def serve_test_devlog_sync():
+    return FileResponse("static/test-devlog-sync.html")

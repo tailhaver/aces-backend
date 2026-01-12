@@ -3,6 +3,7 @@ import logging
 
 from .usercleanup import cleanup_deleted_users
 from .pyramidsync import sync_users_to_airtable
+from .devlogreview import sync_devlog_reviews
 
 logger = logging.getLogger(__name__)
 
@@ -40,3 +41,14 @@ async def run_pyramid_sync():
             break
         except Exception as e:
             logger.exception("run_pyramid_sync failed: %s", e)
+
+async def run_devlog_review_sync():
+    """Run the devlog review sync job periodically"""
+    while True:
+        try:
+            await sync_devlog_reviews()
+        except Exception:
+            logger.exception("Devlog review sync task failed")
+        
+        # Run every 2 minutes
+        await asyncio.sleep(120)
