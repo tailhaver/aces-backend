@@ -286,52 +286,6 @@ add_pagination(app)
 # async def test():
 #     return foo()
 
-
-@app.get("/")
-async def home(_request: Request):
-    """Home route"""
-    # if client.is
-    # if client.isAuthenticated() is False:
-    #     return HTMLResponse("Not authenticated <a href='/sign-in'>Sign in</a>")
-
-    # return HTMLResponse("Authenticated <a href='/sign-out'>Sign out</a>")
-    return FileResponse("static/login.html")
-
-
-@app.get("/protectedroute")
-@require_auth
-async def protected_route(request: Request):
-    """Protected route example"""
-    user_email = request.state.user["sub"]
-    return HTMLResponse(
-        f"<h1>Hello World! This is authenticated! Your email is {user_email}! <br>"
-        f"Your full string should be {request.state.user}</h1>"
-    )
-
-
-@app.get("/login")
-async def serve_login(_request: Request):
-    """Login page"""
-    return FileResponse("static/login.html")
-
-
-@app.get("/projectstest")
-@require_auth
-async def serve_projects_test(request: Request):  # pylint: disable=unused-argument
-    """Projects test page"""
-    return FileResponse("static/projectstest.html")
-
-
-@app.get("/admin")
-@require_auth
-async def serve_admin(
-    request: Request,  # pylint: disable=unused-argument
-    _permission: Any = Depends(permission_dependency(Permission.ADMIN)),
-) -> str:
-    """Admin page"""
-    return "test"
-
-
 # @app.post("/login")
 # async def handle_login(email: Annotated[str, Form()], otp: Annotated[int, Form()]):
 #     pass
@@ -339,6 +293,53 @@ async def serve_admin(
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
-@app.get("/test-devlog-sync")
-async def serve_test_devlog_sync():
-    return FileResponse("static/test-devlog-sync.html")
+# Development-only test routes
+if os.getenv("ENVIRONMENT", "development") == "development":
+
+    @app.get("/test-devlog-sync")
+    async def serve_test_devlog_sync():
+        return FileResponse("static/test-devlog-sync.html")
+    
+    @app.get("/")
+    async def home(_request: Request):
+        """Home route"""
+        # if client.is
+        # if client.isAuthenticated() is False:
+        #     return HTMLResponse("Not authenticated <a href='/sign-in'>Sign in</a>")
+
+        # return HTMLResponse("Authenticated <a href='/sign-out'>Sign out</a>")
+        return FileResponse("static/login.html")
+
+
+    @app.get("/protectedroute")
+    @require_auth
+    async def protected_route(request: Request):
+        """Protected route example"""
+        user_email = request.state.user["sub"]
+        return HTMLResponse(
+            f"<h1>Hello World! This is authenticated! Your email is {user_email}! <br>"
+            f"Your full string should be {request.state.user}</h1>"
+        )
+
+
+    @app.get("/login")
+    async def serve_login(_request: Request):
+        """Login page"""
+        return FileResponse("static/login.html")
+
+
+    @app.get("/projectstest")
+    @require_auth
+    async def serve_projects_test(request: Request):  # pylint: disable=unused-argument
+        """Projects test page"""
+        return FileResponse("static/projectstest.html")
+
+
+    @app.get("/admin")
+    @require_auth
+    async def serve_admin(
+        request: Request,  # pylint: disable=unused-argument
+        _permission: Any = Depends(permission_dependency(Permission.ADMIN)),
+    ) -> str:
+        """Admin page"""
+        return "test"
