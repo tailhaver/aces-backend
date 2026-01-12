@@ -73,6 +73,7 @@ class ProjectResponse(BaseModel):
     repo: Optional[str]
     demo_url: Optional[str]
     preview_image: Optional[str]
+    description: Optional[str]
     shipped: bool
 
     model_config = ConfigDict(from_attributes=True)
@@ -89,6 +90,7 @@ class ProjectResponse(BaseModel):
             repo=project.repo,
             demo_url=project.demo_url,
             preview_image=project.preview_image,
+            description=project.description,
             shipped=project.shipped,
         )
 
@@ -512,6 +514,11 @@ async def create_project(
         preview_image=(
             str(project_create_request.preview_image)
             if project_create_request.preview_image is not None
+            else None
+        ),
+        description=(
+            str(project_create_request.description)
+            if project_create_request.description is not None
             else None
         ),
         # last_updated=datetime.datetime.now(datetime.timezone.utc)
