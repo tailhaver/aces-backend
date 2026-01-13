@@ -256,7 +256,7 @@ async def refresh_token(request: Request, response: Response) -> SimpleResponse:
     if curr_session_id is None:
         raise HTTPException(status_code=401)
     try:
-        if not os.getenv("JWT_SECRET"):
+        if os.getenv("JWT_SECRET") is None:
             raise HTTPException(status_code=500)
         decoded_jwt = jwt.decode(
             curr_session_id, os.getenv("JWT_SECRET", ""), algorithms=["HS256"]
