@@ -136,7 +136,11 @@ async def sync_devlog_reviews():
                             )
 
                     else:
-                        if old_state == "Approved" and devlog.cards_awarded and airtable_status == "Rejected":
+                        if (
+                            old_state == "Approved"
+                            and devlog.cards_awarded
+                            and airtable_status == "Rejected"
+                        ):
                             user_result = await session.execute(
                                 select(User)
                                 .where(User.id == devlog.user_id)
