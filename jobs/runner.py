@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 
 CLEANUP_INTERVAL = 60 * 60 * 24  # 24h
 PYRAMID_SYNC_INTERVAL = 60 * 10  # 10m
+DEVLOG_SYNC_INTERVAL = 60 * 10 # 10m
 
 
 async def run_cleanup():
@@ -56,7 +57,7 @@ async def run_devlog_review_sync():
 
     while True:
         try:
-            await asyncio.sleep(120)
+            await asyncio.sleep(DEVLOG_SYNC_INTERVAL)
             await sync_devlog_reviews()
         except asyncio.CancelledError:
             break

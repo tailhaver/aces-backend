@@ -23,12 +23,7 @@ async def sync_devlog_reviews():
     base_id = os.getenv("AIRTABLE_BASE_ID")
 
     if not all([table_id, api_key, base_id]):
-        logger.warning(
-            "Missing Airtable review config: table_id=%s, api_key=%s, base_id=%s",
-            bool(table_id),
-            bool(api_key),
-            bool(base_id),
-        )
+        logger.warning("Missing Airtable review config")
         return
     # Validate api_key is not empty
     if api_key.strip() == "":
@@ -100,6 +95,7 @@ async def sync_devlog_reviews():
                                 .where(
                                     Devlog.project_id == devlog.project_id,
                                     Devlog.id < devlog.id,
+                                    Devlog.state == "Approved",
                                 )
                                 .order_by(Devlog.id.desc())
                                 .limit(1)
