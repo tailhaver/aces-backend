@@ -37,10 +37,10 @@ USERNAME_PATTERN = re.compile(r"^[a-zA-Z0-9_]+$")
 async def lifespan(_app: Any):
     """Redis connection lifespan manager"""
     global r  # pylint: disable=W0601
-    host = "redis" if os.getenv("USING_DOCKER") == "true" else "localhost"
-    r = redis.Redis(
+    redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+    r = redis.from_url(
+        redis_url,
         password=os.getenv("REDIS_PASSWORD", ""),
-        host=host,
         decode_responses=True,
     )
     yield
