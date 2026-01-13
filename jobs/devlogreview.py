@@ -44,27 +44,27 @@ async def sync_devlog_reviews():
         updates_to_airtable: list[dict[str, Any]] = []
         processed_count = 0
 
-        async with get_session() as session:
-            for record in records:
-                fields = record.get("fields", {})
-                airtable_record_id = record.get("id")
-
-                devlog_id = fields.get("Devlog ID")
-                airtable_status = fields.get("Status")
-
-                if not devlog_id or not isinstance(devlog_id, (int, float)):
-                    continue
-
-                devlog_id = int(devlog_id)
-
-                # Airtable uses numeric status values: 0=Published, 1=Accepted, 2=Rejected, 3=Other
-                if not isinstance(airtable_status, (int, float)):
-                    # Skip if status is not a number
-                    continue
-
-                status_value = int(airtable_status)
-
-                # Fetch the devlog with lock
+        for record in records:
+            fields = record.get("fields", {})
+            airtable_record_id = record.get("id")
+            
+            devlog_id = fields.get("Devlog ID")
+            airtable_status = fields.get("Status")
+            
+            if not devlog_id or not isinstance(devlog_id, (int, float)):
+                continue
+            
+            devlog_id = int(devlog_id)
+            
+            # Airtable uses numeric status values: 0=Published, 1=Accepted, 2=Rejected, 3=Other
+            if not isinstance(airtable_status, (int, float)):
+                # Skip if status is not a number
+                continue
+            
+            status_value = int(airtable_status)
+            
+            # Fetch the devlog with lock in a dedicated session/transaction per record
+            async with get_session() as session:
                 async with session.begin():
                     result = await session.execute(
                         select(Devlog).where(Devlog.id == devlog_id).with_for_update()
