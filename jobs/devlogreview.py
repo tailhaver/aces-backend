@@ -44,27 +44,28 @@ async def sync_devlog_reviews():
         updates_to_airtable: list[dict[str, Any]] = []
         processed_count = 0
 
-        for record in records:
-            fields = record.get("fields", {})
-            airtable_record_id = record.get("id")
-            
-            devlog_id = fields.get("Devlog ID")
-            airtable_status = fields.get("Status")
-            
-            if not devlog_id or not isinstance(devlog_id, (int, float)):
-                continue
-            
-            devlog_id = int(devlog_id)
-            
-            # Airtable uses numeric status values: 0=Published, 1=Accepted, 2=Rejected, 3=Other
-            if not isinstance(airtable_status, (int, float)):
-                # Skip if status is not a number
-                continue
-            
-            status_value = int(airtable_status)
-            
-            # Fetch the devlog with lock in a dedicated session/transaction per record
-            async with get_session() as session:
+        async with get_session() as session:
+            for record in records:
+                fields = record.get("fields", {})
+                airtable_record_id = record.get("id")
+
+                devlog_id = fields.get("Devlog ID")
+                airtable_status = fields.get("Status")
+
+                if not devlog_id or not isinstance(devlog_id, (int, float)):
+                    continue
+
+                devlog_id = int(devlog_id)
+
+                # Airtable uses numeric status values: 0=Published, 1=Accepted, 2=Rejected, 3=Other
+                if not isinstance(airtable_status, str) or airtable_status not in ["Pending", "Approved", "Rejected", "Other"]:
+                    # Skip if status is not a valid status
+                    logger.warning("Unknown status '%s' for devlog %d", airtable_status, devlog_id)
+                    continue
+                    
+                # status_value = int(airtable_status)
+
+                # Fetch the devlog with lock
                 async with session.begin():
                     result = await session.execute(
                         select(Devlog).where(Devlog.id == devlog_id).with_for_update()
@@ -76,7 +77,7 @@ async def sync_devlog_reviews():
                         continue
 
                     # Check if status has changed
-                    if devlog.state == status_value:
+                    if devlog.state == airtable_status:
                         # Already processed, but ensure Airtable has the cards awarded
                         if devlog.cards_awarded != fields.get("Cards Awarded"):
                             updates_to_airtable.append(
@@ -91,11 +92,11 @@ async def sync_devlog_reviews():
 
                     old_state = devlog.state
 
-                    if status_value == 1:  # ACCEPTED
-                        devlog.state = status_value
+                    if airtable_status == "Approved":  # ACCEPTED
+                        devlog.state = airtable_status
 
                         # only award cards if transitioning TO accepted to avoid double awarding
-                        if old_state != 1:
+                        if old_state != "Approved":
                             prev_result = await session.execute(
                                 select(Devlog.hours_snapshot)
                                 .where(
@@ -134,15 +135,15 @@ async def sync_devlog_reviews():
                                 devlog.user_id,
                             )
 
-                    elif status_value == 2:  # REJECTED
-                        devlog.state = status_value
+                    elif airtable_status == "Rejected":  # REJECTED
+                        devlog.state = airtable_status
                         logger.info("Rejected devlog %d", devlog.id)
 
-                    elif status_value == 3:  # OTHER
-                        devlog.state = status_value
+                    elif airtable_status == "Other":  # OTHER
+                        devlog.state = airtable_status
 
                     else:  # 0 = PUBLISHED or unknown
-                        devlog.state = status_value
+                        devlog.state = airtable_status
 
                     # queue the update
                     if airtable_record_id:

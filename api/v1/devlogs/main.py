@@ -4,7 +4,7 @@ import asyncio
 import logging
 import os
 from datetime import datetime
-from enum import IntEnum
+from enum import StrEnum
 from typing import Optional
 
 import sqlalchemy
@@ -30,13 +30,13 @@ CDN_HOST = "hc-cdn.hel1.your-objectstorage.com"
 CARDS_PER_HOUR = 8
 
 
-class DevlogState(IntEnum):
+class DevlogState(StrEnum):
     """Devlog states"""
 
-    PUBLISHED = 0
-    ACCEPTED = 1
-    REJECTED = 2
-    OTHER = 3
+    PUBLISHED = "Pending"
+    ACCEPTED = "Approved"
+    REJECTED = "Rejected"
+    OTHER = "Other"
 
 
 class CreateDevlogRequest(BaseModel):

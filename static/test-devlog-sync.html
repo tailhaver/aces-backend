@@ -293,10 +293,9 @@
                 
                 if (data.devlogs && data.devlogs.length > 0) {
                     const d = data.devlogs[0];
-                    const states = {0: 'PUBLISHED', 1: 'ACCEPTED', 2: 'REJECTED', 3: 'OTHER'};
                     let html = '<div class="info"><pre>';
                     html += `Devlog ID: ${d.id}\n`;
-                    html += `State: ${states[d.state]}\n`;
+                    html += `State: ${d.state}\n`;
                     html += `Cards Awarded: ${d.cards_awarded}\n`;
                     html += `Hours: ${d.hours_snapshot}\n`;
                     html += `Content: ${d.content}\n`;

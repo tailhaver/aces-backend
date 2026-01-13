@@ -296,7 +296,7 @@ if os.getenv("ENVIRONMENT", "development") == "development":
 
     @app.get("/test-devlog-sync")
     @require_auth
-    async def serve_test_devlog_sync():
+    async def serve_test_devlog_sync(request: Request):
         return FileResponse("static/test-devlog-sync.html")
 
     @app.get("/")
