@@ -17,7 +17,7 @@ import sentry_sdk
 from fastapi import Depends, FastAPI, HTTPException, Request  # , Form
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse  # , RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse  # , RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi_pagination import add_pagination
 from sentry_sdk.integrations.logging import EventHandler, LoggingIntegration
@@ -312,9 +312,15 @@ app.add_middleware(
 async def validation_exception_handler(_request: Request, exc: RequestValidationError):
     """Invalid request handler"""
     logging.getLogger("aces.access").debug("Validation error: %s", exc.errors())
-    raise HTTPException(
+    errors = exc.errors()
+    messages = []
+    for err in errors:
+        loc = " -> ".join(str(l) for l in err.get("loc", []))
+        msg = err.get("msg", "Unknown error")
+        messages.append(f"{loc}: {msg}" if loc else msg)
+    return JSONResponse(
         status_code=400,
-        detail={"errors": exc.errors()},
+        content={"detail": "; ".join(messages), "errors": errors},
     )
 
 

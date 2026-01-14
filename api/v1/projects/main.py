@@ -45,6 +45,7 @@ class UpdateProjectRequest(BaseModel):
 
     # project_id: int
     project_name: Optional[str] = Field(min_length=1, max_length=100)
+    hackatime_projects: Optional[List[str]] = None
     repo: Optional[HttpUrl] = None
     demo_url: Optional[HttpUrl] = None
     preview_image: Optional[HttpUrl] = None
@@ -203,6 +204,31 @@ async def update_project(
 
     if project_request.description is not None:
         project.description = project_request.description
+
+    # Update hackatime projects with double-link prevention
+    if project_request.hackatime_projects is not None:
+        new_projects = project_request.hackatime_projects
+        current_projects = project.hackatime_projects or []
+
+        # Find projects being added
+        projects_to_add = [p for p in new_projects if p not in current_projects]
+
+        # Check each new project isn't already linked to another ACES project
+        for proj_name in projects_to_add:
+            existing_link = await session.execute(
+                sqlalchemy.select(UserProject).where(
+                    UserProject.user_email == user_email,
+                    UserProject.id != project_id,
+                    cast(UserProject.hackatime_projects, JSONB).contains([proj_name]),
+                )
+            )
+            if existing_link.scalar_one_or_none() is not None:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Hackatime project '{proj_name}' is already linked to another ACES project",
+                )
+
+        project.hackatime_projects = new_projects
 
     try:
         await session.commit()
