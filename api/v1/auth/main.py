@@ -308,7 +308,7 @@ async def send_otp_code(to_email: str, old_email: Optional[str] = None) -> bool:
 
 
 @router.get("/oauth")
-@limiter.limit("3/minute")  # type: ignore
+@limiter.limit("10/minute")  # type: ignore
 async def redirect_to_oauth(
     request: Request,  # pylint: disable=W0613
     response: Response,  # pylint: disable=W0613
@@ -337,7 +337,7 @@ async def redirect_to_oauth(
 
 
 @router.get("/callback")
-@limiter.limit("3/minute")  # type: ignore
+@limiter.limit("10/minute")  # type: ignore
 async def redirect_to_profile(
     request: Request,  # pylint: disable=W0613
     response: Response,  # pylint: disable=W0613
