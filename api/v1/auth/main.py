@@ -457,9 +457,17 @@ async def hackatime_link_callback(
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
 
+    try:
+        hackatime_id_int = int(hackatime_user_id)
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid Hackatime user ID",
+        )
+
     existing_link = await session.execute(
         sqlalchemy.select(User).where(
-            User.hackatime_id == int(hackatime_user_id),
+            User.hackatime_id == hackatime_id_int,
             User.email != user_email,
         )
     )
@@ -469,23 +477,7 @@ async def hackatime_link_callback(
             detail="This Hackatime account is already linked to another user",
         )
 
-    old_hackatime_id = user.hackatime_id
-    new_hackatime_id = int(hackatime_user_id)
-
-    if old_hackatime_id is not None and old_hackatime_id != new_hackatime_id:
-        logger.info(
-            "User %s re-linking Hackatime: %s -> %s, clearing project associations",
-            user_email,
-            old_hackatime_id,
-            new_hackatime_id,
-        )
-        await session.execute(
-            sqlalchemy.update(UserProject)
-            .where(UserProject.user_email == user_email)
-            .values(hackatime_projects=[], hackatime_total_hours=0.0)
-        )
-
-    user.hackatime_id = new_hackatime_id
+    user.hackatime_id = hackatime_id_int
     if hackatime_username:
         user.username = hackatime_username
 
