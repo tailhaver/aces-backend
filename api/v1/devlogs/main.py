@@ -198,7 +198,9 @@ async def create_devlog(
         .order_by(Devlog.id.desc())
         .limit(1)
     )
-    last_hours_snapshot = last_devlog_result.scalar_one_or_none() or 0 # prevent the none case
+    last_hours_snapshot = (
+        last_devlog_result.scalar_one_or_none() or 0
+    )  # prevent the none case
 
     if current_hours <= last_hours_snapshot:
         raise HTTPException(
