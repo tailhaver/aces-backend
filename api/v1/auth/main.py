@@ -425,7 +425,7 @@ async def redirect_to_profile(
                 new_user.referral_code_used = (
                     referral_code  # only set the referral code if its valid
                 )
-            
+
             if new_user.slack_id:
                 try:
                     hackatime_request = await client.get(
@@ -446,9 +446,13 @@ async def redirect_to_profile(
                                         new_user.slack_id,
                                     )
                     elif hackatime_request.status_code == 400:
-                        logger.warning("Slack user %s not linked to hackatime", new_user.slack_id)
+                        logger.warning(
+                            "Slack user %s not linked to hackatime", new_user.slack_id
+                        )
                     else:
-                        logger.warning("Hackatime returned a %s", hackatime_request.status_code)
+                        logger.warning(
+                            "Hackatime returned a %s", hackatime_request.status_code
+                        )
                 except Exception:  # pylint: disable=broad-exception-caught
                     logger.warning(
                         "Failed to fetch Hackatime data for slack_id %s, user can link later",
@@ -456,8 +460,7 @@ async def redirect_to_profile(
                     )
             else:
                 logger.warning(
-                    "Email %s did not have a Slack ID linked.",
-                    new_user.email
+                    "Email %s did not have a Slack ID linked.", new_user.email
                 )
             try:
                 session.add(new_user)

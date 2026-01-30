@@ -255,10 +255,14 @@ async def update_project(
             if user and user.hackatime_id:
                 try:
                     user_projects = await get_projects(user.hackatime_id, new_projects)
-                    total_seconds = sum(v for v in user_projects.values() if v is not None)
+                    total_seconds = sum(
+                        v for v in user_projects.values() if v is not None
+                    )
                     project.hackatime_total_hours = total_seconds / 3600.0
-                except Exception as e:  # pylint: disable=broad-exception-caught
-                    logger.exception("Error fetching Hackatime hours during project update: %d", e)
+                except Exception:  # pylint: disable=broad-exception-caught
+                    logger.exception(
+                        "Error fetching Hackatime hours during project update"
+                    )
         elif not new_projects:
             project.hackatime_total_hours = 0.0
 
@@ -347,6 +351,27 @@ async def return_project_by_id(
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
 
+    user_raw = await session.execute(
+        sqlalchemy.select(User).where(User.email == user_email)
+    )
+    user = user_raw.scalar_one_or_none()
+
+    if user and user.hackatime_id and project.hackatime_projects:
+        try:
+            hackatime_data = await get_projects(
+                user.hackatime_id, list(project.hackatime_projects)
+            )
+            total_seconds = sum(
+                float(seconds or 0) for _, seconds in hackatime_data.items()
+            )
+            project.hackatime_total_hours = total_seconds / 3600.0
+            await session.commit()
+            await session.refresh(project)
+        except Exception:
+            logger.warning(
+                "Failed to refresh Hackatime hours for project %d", project_id
+            )
+
     return ProjectResponse.from_model(project)
 
 
@@ -383,7 +408,9 @@ async def link_hackatime_project(
         sqlalchemy.select(UserProject).where(
             UserProject.user_email == user_email,
             UserProject.id != project_id,
-            cast(UserProject.hackatime_projects, JSONB).contains([hackatime_project.name]),
+            cast(UserProject.hackatime_projects, JSONB).contains(
+                [hackatime_project.name]
+            ),
         )
     )
     if existing_link.scalar_one_or_none() is not None:
