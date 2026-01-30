@@ -383,6 +383,12 @@ if os.getenv("ENVIRONMENT", "development") == "development":
         """Projects test page"""
         return FileResponse("static/projectstest.html")
 
+    @app.get("/test-devlog-create")
+    @require_auth
+    async def serve_test_devlog_create(request: Request):  # pylint: disable=unused-argument
+        """Devlog creation test page"""
+        return FileResponse("static/test-devlog-create.html")
+
     @app.get("/admin")
     @require_auth
     async def serve_admin(
