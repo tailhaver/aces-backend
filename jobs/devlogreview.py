@@ -100,8 +100,7 @@ async def sync_devlog_reviews():
                                 select(Devlog.hours_snapshot)
                                 .where(
                                     Devlog.project_id == devlog.project_id,
-                                    Devlog.hours_snapshot
-                                    < devlog.hours_snapshot,  # Use hours_snapshot order
+                                    Devlog.hours_snapshot < devlog.hours_snapshot,
                                     Devlog.state == "Approved",
                                 )
                                 .order_by(Devlog.hours_snapshot.desc())
