@@ -100,15 +100,19 @@ async def sync_devlog_reviews():
                                 select(Devlog.hours_snapshot)
                                 .where(
                                     Devlog.project_id == devlog.project_id,
-                                    Devlog.id < devlog.id,
+                                    Devlog.hours_snapshot < devlog.hours_snapshot,
                                     Devlog.state == "Approved",
                                 )
-                                .order_by(Devlog.id.desc())
+                                .order_by(Devlog.hours_snapshot.desc())
                                 .limit(1)
                             )
                             prev_hours = prev_result.scalar() or 0
-                            cards = round(
-                                (devlog.hours_snapshot - prev_hours) * CARDS_PER_HOUR
+                            cards = max(
+                                0,
+                                round(
+                                    (devlog.hours_snapshot - prev_hours)
+                                    * CARDS_PER_HOUR
+                                ),
                             )
                             devlog.cards_awarded = cards
 
@@ -148,7 +152,9 @@ async def sync_devlog_reviews():
                             )
                             user = user_result.scalar_one_or_none()
                             if user:
-                                user.cards_balance -= devlog.cards_awarded
+                                user.cards_balance = max(
+                                    0, user.cards_balance - devlog.cards_awarded
+                                )
                                 logger.info(
                                     "Rescinded %d cards for devlog %d user %d",
                                     devlog.cards_awarded,
