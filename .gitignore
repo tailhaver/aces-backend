@@ -1,5 +1,7 @@
-node_modules/*
-.venv/*
-**/__pycache__/
-notes.md
+.ruff_cache/
+.venv/
+__pycache__/
+node_modules/
+
 .env
+notes.md
