@@ -24,7 +24,7 @@ ignore = [
     "ANN201", "E501"
 ]
 
-[lint.per-file-ignores]
+[lint.extend-per-file-ignores]
 "__init__.py" = ["E402"]
 
 [format]
