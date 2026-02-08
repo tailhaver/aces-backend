@@ -23,7 +23,7 @@ from api.v1.devlogs import DevlogResponse, DevlogsResponse
 from db import get_db  # , engine
 from lib.hackatime import get_projects
 from lib.ratelimiting import limiter
-from models.main import User, UserProject
+from models import User, UserProject
 
 logger = logging.getLogger(__name__)
 

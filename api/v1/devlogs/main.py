@@ -17,7 +17,7 @@ from api.v1.auth import require_auth
 from db import get_db
 from lib.hackatime import get_projects
 from lib.ratelimiting import limiter
-from models.main import Devlog, User, UserProject
+from models import Devlog, User, UserProject
 
 logger = logging.getLogger(__name__)
 

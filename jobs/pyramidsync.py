@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from db.main import get_session
-from models.main import User
+from models import User
 
 logger = logging.getLogger(__name__)
 

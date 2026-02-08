@@ -9,7 +9,7 @@ from pyairtable import Api
 from sqlalchemy import select
 
 from db.main import get_session
-from models.main import Devlog, User
+from models import Devlog, User
 
 logger = logging.getLogger(__name__)
 

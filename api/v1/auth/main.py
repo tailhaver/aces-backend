@@ -30,7 +30,7 @@ import httpx
 from db import get_db
 from lib.ratelimiting import limiter
 from lib.responses import SimpleResponse
-from models.main import User
+from models import User
 
 logger = logging.getLogger(__name__)
 
