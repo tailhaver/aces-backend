@@ -39,7 +39,7 @@ async def sync_users_to_airtable():
 
         records: list[dict[str, dict[str, str | int | float]]] = []
         for user in users:
-            records.append(
+            records.append(  # noqa: PERF401, ignored for readability
                 {
                     "fields": {
                         "Email": user.email,

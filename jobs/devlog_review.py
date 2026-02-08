@@ -64,123 +64,20 @@ async def sync_devlog_reviews():
                 continue
 
             # Fetch the devlog with lock in a dedicated session/transaction per record
-            async with get_session() as session:
-                async with session.begin():
-                    result = await session.execute(
-                        select(Devlog).where(Devlog.id == devlog_id).with_for_update()
-                    )
-                    devlog = result.scalar_one_or_none()
+            async with get_session() as session, session.begin():
+                result = await session.execute(
+                    select(Devlog).where(Devlog.id == devlog_id).with_for_update()
+                )
+                devlog = result.scalar_one_or_none()
 
-                    if devlog is None:
-                        logger.warning("Devlog ID %d not found in database", devlog_id)
-                        continue
+                if devlog is None:
+                    logger.warning("Devlog ID %d not found in database", devlog_id)
+                    continue
 
-                    # Check if status has changed
-                    if devlog.state == airtable_status:
-                        # Already processed, but ensure Airtable has the cards awarded
-                        if devlog.cards_awarded != fields.get("Cards Awarded"):
-                            updates_to_airtable.append(
-                                {
-                                    "id": airtable_record_id,
-                                    "fields": {
-                                        "Cards Awarded": devlog.cards_awarded,
-                                    },
-                                }
-                            )
-                        continue
-
-                    old_state = devlog.state
-
-                    if airtable_status == "Approved":  # ACCEPTED
-                        devlog.state = airtable_status
-
-                        # only award cards if transitioning TO accepted to avoid double awarding
-                        if old_state != "Approved":
-                            prev_result = await session.execute(
-                                select(Devlog.hours_snapshot)
-                                .where(
-                                    Devlog.project_id == devlog.project_id,
-                                    Devlog.hours_snapshot < devlog.hours_snapshot,
-                                    Devlog.state == "Approved",
-                                )
-                                .order_by(Devlog.hours_snapshot.desc())
-                                .limit(1)
-                            )
-                            prev_hours = prev_result.scalar() or 0
-                            cards = max(
-                                0,
-                                round(
-                                    (devlog.hours_snapshot - prev_hours)
-                                    * CARDS_PER_HOUR
-                                ),
-                            )
-                            devlog.cards_awarded = cards
-
-                            user_result = await session.execute(
-                                select(User)
-                                .where(User.id == devlog.user_id)
-                                .with_for_update()
-                            )
-                            user = user_result.scalar_one_or_none()
-                            if user:
-                                user.cards_balance += cards
-                            else:
-                                logger.error(
-                                    "User %d not found for devlog %d",
-                                    devlog.user_id,
-                                    devlog.id,
-                                )
-                                continue
-
-                            logger.info(
-                                "Accepted devlog %d, awarded %d cards to user %d",
-                                devlog.id,
-                                cards,
-                                devlog.user_id,
-                            )
-
-                    else:
-                        if (
-                            old_state == "Approved"
-                            and devlog.cards_awarded
-                            and airtable_status == "Rejected"
-                        ):
-                            user_result = await session.execute(
-                                select(User)
-                                .where(User.id == devlog.user_id)
-                                .with_for_update()
-                            )
-                            user = user_result.scalar_one_or_none()
-                            if user:
-                                user.cards_balance = max(
-                                    0, user.cards_balance - devlog.cards_awarded
-                                )
-                                logger.info(
-                                    "Rescinded %d cards for devlog %d user %d",
-                                    devlog.cards_awarded,
-                                    devlog.id,
-                                    devlog.user_id,
-                                )
-                            else:
-                                logger.error(
-                                    "User %d not found for devlog %d when rescinding",
-                                    devlog.user_id,
-                                    devlog.id,
-                                )
-                            devlog.cards_awarded = 0
-
-                        if airtable_status == "Rejected":  # REJECTED
-                            devlog.state = airtable_status
-                            logger.info("Rejected devlog %d", devlog.id)
-
-                        elif airtable_status == "Other":  # OTHER
-                            devlog.state = airtable_status
-
-                        else:  # Pending or unknown
-                            devlog.state = airtable_status
-
-                    # queue the update
-                    if airtable_record_id:
+                # Check if status has changed
+                if devlog.state == airtable_status:
+                    # Already processed, but ensure Airtable has the cards awarded
+                    if devlog.cards_awarded != fields.get("Cards Awarded"):
                         updates_to_airtable.append(
                             {
                                 "id": airtable_record_id,
@@ -189,8 +86,109 @@ async def sync_devlog_reviews():
                                 },
                             }
                         )
+                    continue
 
-                    processed_count += 1
+                old_state = devlog.state
+
+                if airtable_status == "Approved":  # ACCEPTED
+                    devlog.state = airtable_status
+
+                    # only award cards if transitioning TO accepted to avoid double awarding
+                    if old_state != "Approved":
+                        prev_result = await session.execute(
+                            select(Devlog.hours_snapshot)
+                            .where(
+                                Devlog.project_id == devlog.project_id,
+                                Devlog.hours_snapshot < devlog.hours_snapshot,
+                                Devlog.state == "Approved",
+                            )
+                            .order_by(Devlog.hours_snapshot.desc())
+                            .limit(1)
+                        )
+                        prev_hours = prev_result.scalar() or 0
+                        cards = max(
+                            0,
+                            round(
+                                (devlog.hours_snapshot - prev_hours) * CARDS_PER_HOUR
+                            ),
+                        )
+                        devlog.cards_awarded = cards
+
+                        user_result = await session.execute(
+                            select(User)
+                            .where(User.id == devlog.user_id)
+                            .with_for_update()
+                        )
+                        user = user_result.scalar_one_or_none()
+                        if user:
+                            user.cards_balance += cards
+                        else:
+                            logger.error(
+                                "User %d not found for devlog %d",
+                                devlog.user_id,
+                                devlog.id,
+                            )
+                            continue
+
+                        logger.info(
+                            "Accepted devlog %d, awarded %d cards to user %d",
+                            devlog.id,
+                            cards,
+                            devlog.user_id,
+                        )
+
+                else:
+                    if (
+                        old_state == "Approved"
+                        and devlog.cards_awarded
+                        and airtable_status == "Rejected"
+                    ):
+                        user_result = await session.execute(
+                            select(User)
+                            .where(User.id == devlog.user_id)
+                            .with_for_update()
+                        )
+                        user = user_result.scalar_one_or_none()
+                        if user:
+                            user.cards_balance = max(
+                                0, user.cards_balance - devlog.cards_awarded
+                            )
+                            logger.info(
+                                "Rescinded %d cards for devlog %d user %d",
+                                devlog.cards_awarded,
+                                devlog.id,
+                                devlog.user_id,
+                            )
+                        else:
+                            logger.error(
+                                "User %d not found for devlog %d when rescinding",
+                                devlog.user_id,
+                                devlog.id,
+                            )
+                        devlog.cards_awarded = 0
+
+                    if airtable_status == "Rejected":  # REJECTED
+                        devlog.state = airtable_status
+                        logger.info("Rejected devlog %d", devlog.id)
+
+                    elif airtable_status == "Other":  # OTHER
+                        devlog.state = airtable_status
+
+                    else:  # Pending or unknown
+                        devlog.state = airtable_status
+
+                # queue the update
+                if airtable_record_id:
+                    updates_to_airtable.append(
+                        {
+                            "id": airtable_record_id,
+                            "fields": {
+                                "Cards Awarded": devlog.cards_awarded,
+                            },
+                        }
+                    )
+
+                processed_count += 1
 
         # batch the update to airtable with cards awarded
         if updates_to_airtable:
