@@ -1,9 +1,9 @@
 import asyncio
 import logging
 
-from .usercleanup import cleanup_deleted_users
-from .pyramidsync import sync_users_to_airtable
-from .devlogreview import sync_devlog_reviews
+from .user_cleanup import cleanup_deleted_users
+from .pyramid_sync import sync_users_to_airtable
+from .devlog_review import sync_devlog_reviews
 
 logger = logging.getLogger(__name__)
 
